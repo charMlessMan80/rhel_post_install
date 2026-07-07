@@ -1,0 +1,58 @@
+---
+- name: Secure GRUB with password on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  vars:
+    grub_superuser: "{{ grub_superuser | default('grubadmin') }}"
+    grub_password: "{{ grub_password }}"
+  tasks:
+    - name: Generate GRUB password hash
+      command: grub2-mkpasswd-pbkdf2
+      args:
+        stdin: "{{ grub_password }}\n{{ grub_password }}\n"
+      register: grub_hash
+      changed_when: false
+      no_log: true
+
+    - name: Extract GRUB password hash
+      set_fact:
+        grub_password_hash: "{{ grub_hash.stdout | regex_search('grub\\.pbkdf2\\.sha512\\.[^ ]+') }}"
+      no_log: true
+
+    - name: Configure GRUB superuser and password
+      # /etc/grub.d/01_users is executed by grub2-mkconfig; its stdout becomes
+      # the grub.cfg snippet. It must be a shell script, not raw GRUB directives.
+      copy:
+        content: |
+          #!/bin/sh
+          exec tail -n +3 $0
+          # This file provides an easy way to add custom users to the grub bootloader.
+          set superusers="{{ grub_superuser }}"
+          password_pbkdf2 {{ grub_superuser }} {{ grub_password_hash }}
+        dest: /etc/grub.d/01_users
+        owner: root
+        group: root
+        mode: "0700"
+      no_log: true
+      notify: regenerate_grub
+
+    - name: Allow normal boot without password (restrict only editing)
+      lineinfile:
+        path: /etc/grub.d/10_linux
+        regexp: '^\s*CLASS="--class gnu-linux'
+        line: 'CLASS="--class gnu-linux --class gnu --class os --unrestricted"'
+        backrefs: yes
+      notify: regenerate_grub
+
+    - name: Verify GRUB user config exists
+      stat:
+        path: /etc/grub.d/01_users
+      register: grub_users_file
+
+    - name: Display GRUB security status
+      debug:
+        msg: "GRUB password protection is {{ 'enabled' if grub_users_file.stat.exists else 'not configured' }}"
+
+  handlers:
+    - name: regenerate_grub
+      command: grub2-mkconfig -o /boot/grub2/grub.cfg

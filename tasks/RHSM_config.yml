@@ -1,0 +1,66 @@
+---
+- name: Register system with Red Hat Subscription Manager
+  hosts: rhel9_hosts
+  become: yes
+  vars:
+    rhsm_username: "{{ rhsm_username }}"
+    rhsm_password: "{{ rhsm_password }}"
+    rhsm_auto_attach: "{{ rhsm_auto_attach | default(true) }}"
+    rhsm_repos: "{{ rhsm_repos | default([]) }}"
+    rhsm_proxy_hostname: "{{ rhsm_proxy_hostname | default('') }}"
+    rhsm_proxy_port: "{{ rhsm_proxy_port | default('') }}"
+  tasks:
+    - name: Configure RHSM proxy hostname in /etc/rhsm/rhsm.conf
+      ini_file:
+        path: /etc/rhsm/rhsm.conf
+        section: server
+        option: proxy_hostname
+        value: "{{ rhsm_proxy_hostname }}"
+        no_extra_spaces: yes
+        owner: root
+        group: root
+        mode: '0644'
+      when: rhsm_proxy_hostname | length > 0
+
+    - name: Configure RHSM proxy port in /etc/rhsm/rhsm.conf
+      ini_file:
+        path: /etc/rhsm/rhsm.conf
+        section: server
+        option: proxy_port
+        value: "{{ rhsm_proxy_port }}"
+        no_extra_spaces: yes
+        owner: root
+        group: root
+        mode: '0644'
+      when: rhsm_proxy_port | length > 0
+
+    - name: Check if system is already registered
+      command: subscription-manager identity
+      register: rhsm_identity
+      changed_when: false
+      failed_when: false
+
+    - name: Register with Red Hat Subscription Manager
+      redhat_subscription:
+        username: "{{ rhsm_username }}"
+        password: "{{ rhsm_password }}"
+        auto_attach: "{{ rhsm_auto_attach }}"
+        state: present
+      when: rhsm_identity.rc != 0
+      no_log: true
+
+    - name: Enable specific repositories
+      rhsm_repository:
+        name: "{{ item }}"
+        state: enabled
+      loop: "{{ rhsm_repos }}"
+      when: rhsm_repos | length > 0
+
+    - name: Verify subscription status
+      command: subscription-manager status
+      register: rhsm_status
+      changed_when: false
+
+    - name: Display subscription status
+      debug:
+        var: rhsm_status.stdout_lines

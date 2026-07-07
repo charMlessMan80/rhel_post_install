@@ -1,0 +1,46 @@
+---
+- name: Configure DNS servers on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  vars:
+    dns_servers: "{{ dns_servers | default(['8.8.8.8', '8.8.4.4']) }}"
+    dns_search_domains: "{{ dns_search_domains | default([]) }}"
+  tasks:
+    - name: Get active NetworkManager connection
+      command: nmcli -t -f NAME con show --active
+      register: nm_active_conn
+      changed_when: false
+
+    - name: Set DNS servers via NetworkManager
+      community.general.nmcli:
+        conn_name: "{{ nm_active_conn.stdout_lines[0] }}"
+        type: ethernet
+        dns4: "{{ dns_servers }}"
+        dns4_search: "{{ dns_search_domains }}"
+        state: present
+      when: nm_active_conn.stdout_lines | length > 0
+      notify: restart_networkmanager
+
+    - name: Ensure NetworkManager manages resolv.conf
+      lineinfile:
+        path: /etc/NetworkManager/conf.d/dns.conf
+        line: "[main]\ndns=default"
+        create: yes
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Reload NetworkManager to apply DNS settings
+      service:
+        name: NetworkManager
+        state: reloaded
+
+    - name: Verify DNS resolution
+      command: host google.com
+      register: dns_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display DNS verification result
+      debug:
+        var: dns_check.stdout_lines

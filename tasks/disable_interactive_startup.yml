@@ -1,0 +1,84 @@
+---
+- name: Disable interactive startup mode on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  tasks:
+    - name: Disable systemd debug shell (emergency console)
+      systemd:
+        name: debug-shell.service
+        enabled: no
+        masked: yes
+        state: stopped
+      failed_when: false
+
+    - name: Read current GRUB_CMDLINE_LINUX
+      command: grep '^GRUB_CMDLINE_LINUX=' /etc/default/grub
+      register: grub_cmdline
+      changed_when: false
+
+    - name: Remove interactive boot parameters from GRUB defaults
+      lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_CMDLINE_LINUX='
+        line: '{{ grub_cmdline.stdout | regex_replace("rd\.break\s*", "") | regex_replace("init=/bin/sh\s*", "") | regex_replace("systemd\.confirm_spawn\s*", "") }}'
+        backrefs: no
+      notify: regenerate_grub
+
+    - name: Disable Ctrl+Alt+Del reboot (mask target)
+      # ctrl-alt-del.target is an alias of reboot.target. Ansible's
+      # `systemd: masked: yes` is unreliable on aliased units, so we create
+      # the /dev/null symlink directly (which is what `systemctl mask` does).
+      file:
+        src: /dev/null
+        dest: /etc/systemd/system/ctrl-alt-del.target
+        state: link
+        force: yes
+        owner: root
+        group: root
+      notify: reload_systemd
+
+    # Masking the target alone is not enough: systemd's CtrlAltDelBurstAction
+    # (default: reboot-force) still triggers a forced reboot after 7 presses
+    # within 2s. Set it to none and reload so the running PID 1 picks it up.
+    - name: Disable Ctrl+Alt+Del burst-action reboot
+      lineinfile:
+        path: /etc/systemd/system.conf
+        regexp: '^\s*#?\s*CtrlAltDelBurstAction\s*='
+        line: 'CtrlAltDelBurstAction=none'
+        state: present
+      notify: reload_systemd
+
+    - name: Disable emergency and rescue mode targets
+      systemd:
+        name: "{{ item }}"
+        masked: yes
+      loop:
+        - emergency.service
+        - rescue.service
+
+    - name: Disable SysRq key
+      sysctl:
+        name: kernel.sysrq
+        value: "0"
+        state: present
+        sysctl_file: /etc/sysctl.d/99-disable-sysrq.conf
+        reload: yes
+
+    - name: Verify interactive startup is disabled
+      command: systemctl is-enabled debug-shell.service
+      register: debug_shell_status
+      changed_when: false
+      failed_when: false
+
+    - name: Display interactive startup status
+      debug:
+        msg: "debug-shell: {{ debug_shell_status.stdout | default('masked') }}, SysRq: disabled, Ctrl+Alt+Del: masked"
+
+  handlers:
+    - name: regenerate_grub
+      command: grub2-mkconfig -o /boot/grub2/grub.cfg
+
+    - name: reload_systemd
+      # daemon-reexec is required (not daemon-reload) for PID 1 to re-read
+      # /etc/systemd/system.conf, including CtrlAltDelBurstAction.
+      command: systemctl daemon-reexec

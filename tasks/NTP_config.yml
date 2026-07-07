@@ -1,0 +1,53 @@
+---
+- name: Configure NTP with chrony on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  vars:
+    ntp_servers: "{{ ntp_servers | default(['0.rhel.pool.ntp.org', '1.rhel.pool.ntp.org', '2.rhel.pool.ntp.org']) }}"
+    ntp_timezone: "{{ ntp_timezone | default('UTC') }}"
+  tasks:
+    - name: Install chrony
+      dnf:
+        name: chrony
+        state: present
+
+    - name: Set timezone
+      timezone:
+        name: "{{ ntp_timezone }}"
+
+    - name: Remove default pool/server entries
+      lineinfile:
+        path: /etc/chrony.conf
+        regexp: "{{ item }}"
+        state: absent
+      loop:
+        - '^pool\s+'
+        - '^server\s+'
+
+    - name: Configure NTP servers
+      lineinfile:
+        path: /etc/chrony.conf
+        line: "server {{ item }} iburst"
+        insertafter: "^#.*server"
+      loop: "{{ ntp_servers }}"
+
+    - name: Enable NTP makestep for initial large offset
+      lineinfile:
+        path: /etc/chrony.conf
+        regexp: '^makestep'
+        line: "makestep 1.0 3"
+
+    - name: Enable and restart chronyd
+      service:
+        name: chronyd
+        state: restarted
+        enabled: yes
+
+    - name: Wait for chrony to sync
+      command: chronyc tracking
+      register: chrony_status
+      changed_when: false
+
+    - name: Display chrony sync status
+      debug:
+        var: chrony_status.stdout_lines

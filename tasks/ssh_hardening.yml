@@ -1,0 +1,38 @@
+---
+- name: Disable SSH root login on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  tasks:
+    - name: Disable root login via SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?\s*PermitRootLogin'
+        line: "PermitRootLogin no"
+        validate: "sshd -t -f %s"
+      notify: restart_sshd
+
+    - name: Disable root login in sshd_config.d drop-ins
+      lineinfile:
+        path: /etc/ssh/sshd_config.d/01-permitrootlogin.conf
+        line: "PermitRootLogin no"
+        create: yes
+        owner: root
+        group: root
+        mode: "0600"
+        validate: "sshd -t -f %s"
+      notify: restart_sshd
+
+    - name: Verify SSH root login is disabled
+      command: sshd -T
+      register: sshd_config
+      changed_when: false
+
+    - name: Display PermitRootLogin setting
+      debug:
+        msg: "{{ sshd_config.stdout_lines | select('match', '(?i)^permitrootlogin') | list }}"
+
+  handlers:
+    - name: restart_sshd
+      service:
+        name: sshd
+        state: restarted

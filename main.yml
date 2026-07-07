@@ -1,0 +1,59 @@
+---
+- name: Post-installation tasks for RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  gather_facts: true
+
+  tasks: 
+    
+    - name: Include hostname configuration tasks
+      include_tasks: tasks/set_hostname.yml
+
+    - name: Include DNS configuration tasks
+      include_tasks: tasks/DNS_config.yml
+
+    - name: Include Red Hat Subscription Manager tasks
+      include_tasks: tasks/RHSM_config.yml
+      when: rhsm_username is defined and rhsm_password is defined
+
+    - name: Include kernel hot patching tasks
+      include_tasks: tasks/kernel_hotpatch.yml
+      when: ansible_facts['distribution'] == "RedHat" and ansible_facts['distribution_major_version'] == "9"
+
+    - name: Include packages update tasks
+      include_tasks: tasks/packages_update.yml
+
+    - name: Include NTP configuration tasks
+      include_tasks: tasks/NTP_config.yml
+
+    - name: Include AD domain join tasks
+      include_tasks: tasks/AD_join.yml
+
+    - name: Include AD CS certificate enrollment tasks
+      include_tasks: tasks/PKI_enrolment.yml
+      when: adcs_server is defined and adcs_server | length > 0
+
+    - name: Include local admin account tasks
+      include_tasks: tasks/local_admin.yml
+      when: local_admin_password is defined
+
+    - name: Include SSH hardening tasks
+      include_tasks: tasks/ssh_hardening.yml
+      when: local_admin_password is defined
+
+    - name: Include secure root shell access tasks
+      include_tasks: tasks/secure_root.yml
+      when: local_admin_password is defined
+
+    - name: Include GRUB password protection tasks
+      include_tasks: tasks/secure_grub.yml
+      when: grub_password is defined
+
+    - name: Include disable interactive startup tasks
+      include_tasks: tasks/disable_interactive_startup.yml
+
+    - name: Include firewall configuration tasks
+      include_tasks: tasks/firewall_config.yml
+      when: ssh_allowed_ips is defined and ssh_allowed_ips | length > 0
+    
+    

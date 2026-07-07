@@ -1,0 +1,44 @@
+---
+- name: Configure firewall to restrict SSH access on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  vars:
+    ssh_allowed_ips: "{{ ssh_allowed_ips | default([]) }}"
+    firewall_zone: "{{ firewall_zone | default('public') }}"
+  tasks:
+    - name: Install firewalld
+      dnf:
+        name: firewalld
+        state: present
+
+    - name: Start and enable firewalld
+      service:
+        name: firewalld
+        state: started
+        enabled: yes
+
+    - name: Remove default SSH service from zone
+      ansible.posix.firewalld:
+        service: ssh
+        zone: "{{ firewall_zone }}"
+        permanent: yes
+        immediate: yes
+        state: disabled
+
+    - name: Allow SSH from trusted IPs only
+      ansible.posix.firewalld:
+        rich_rule: 'rule family="ipv4" source address="{{ item }}" port port="22" protocol="tcp" accept'
+        zone: "{{ firewall_zone }}"
+        permanent: yes
+        immediate: yes
+        state: enabled
+      loop: "{{ ssh_allowed_ips }}"
+
+    - name: Verify active firewall rules
+      command: firewall-cmd --zone={{ firewall_zone }} --list-all
+      register: firewall_status
+      changed_when: false
+
+    - name: Display firewall status
+      debug:
+        var: firewall_status.stdout_lines

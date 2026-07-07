@@ -1,0 +1,99 @@
+---
+- name: Join RHEL 9 hosts to Active Directory
+  hosts: rhel9_hosts
+  become: yes
+  vars:
+    ad_domain: "{{ ad_domain }}"
+    ad_join_user: "{{ ad_join_user }}"
+    ad_join_password: "{{ ad_join_password }}"
+    ad_allowed_groups: "{{ ad_allowed_groups | default([]) }}"
+    ad_ou: "{{ ad_ou | default(omit) }}"
+  tasks:
+    - name: Set DNS to point to AD domain controllers
+      community.general.nmcli:
+        conn_name: "{{ ansible_default_ipv4.interface }}"
+        type: ethernet
+        dns4: "{{ ad_dns_servers }}"
+        dns4_search: "{{ ad_domain }}"
+        state: present
+      notify: restart_networkmanager
+
+    - name: Install required packages for AD join
+      dnf:
+        name:
+          - realmd
+          - oddjob
+          - oddjob-mkhomedir
+          - sssd
+          - sssd-tools
+          - adcli
+          - krb5-workstation
+          - samba-common-tools
+          - NetworkManager
+        state: present
+
+    - name: Check if already joined to domain
+      command: realm list
+      register: realm_list_check
+      changed_when: false
+
+    - name: Discover the Active Directory domain
+      command: realm discover {{ ad_domain }}
+      register: realm_discover
+      when: ad_domain not in realm_list_check.stdout
+
+    - name: Join the host to the Active Directory domain
+      shell: echo '{{ ad_join_password }}' | realm join --automatic-id-mapping=no --user={{ ad_join_user }} {{ '--computer-ou=' + ad_ou if ad_ou is defined else '' }} {{ ad_domain }}
+      no_log: true
+      when: ad_domain not in realm_list_check.stdout
+
+    - name: Verify the host is joined to the domain
+      shell: realm list | grep -q "{{ ad_domain }}"
+      register: realm_list
+      changed_when: false
+
+    - name: Enable automatic home directory creation
+      command: authselect select sssd with-mkhomedir --force
+
+    - name: Start and enable the oddjobd service
+      service:
+        name: oddjobd
+        state: started
+        enabled: yes
+
+    - name: Configure realm to deny all users by default
+      command: realm deny --all
+
+    - name: Allow specific AD groups to log in
+      command: realm permit -g "{{ item }}"
+      loop: "{{ ad_allowed_groups }}"
+      when: ad_allowed_groups | length > 0
+
+    - name: Configure SSSD for AD
+      blockinfile:
+        path: /etc/sssd/sssd.conf
+        block: |
+          ldap_tls_reqcert = demand
+          ad_gpo_access_control = enforcing
+          fallback_homedir = /home/%u@%d
+          default_shell = /bin/bash
+        marker: "# {mark} ANSIBLE MANAGED - AD CONFIG"
+      notify: restart_sssd
+
+    - name: Start and enable SSSD
+      service:
+        name: sssd
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: restart_networkmanager
+      service:
+        name: NetworkManager
+        state: restarted
+
+    - name: restart_sssd
+      service:
+        name: sssd
+        state: restarted
+      

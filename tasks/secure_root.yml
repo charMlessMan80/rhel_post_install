@@ -1,0 +1,49 @@
+---
+- name: Secure root shell access on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  tasks:
+    - name: Set root shell to /sbin/nologin
+      user:
+        name: root
+        shell: /sbin/nologin
+
+    - name: Lock root account password
+      user:
+        name: root
+        password_lock: yes
+
+    - name: Restrict su to wheel group only
+      lineinfile:
+        path: /etc/pam.d/su
+        regexp: '^#?\s*auth\s+required\s+pam_wheel\.so\s+use_uid'
+        line: "auth           required        pam_wheel.so use_uid"
+
+    - name: Restrict access to root cron
+      file:
+        path: "{{ item }}"
+        owner: root
+        group: root
+        mode: "0600"
+      loop:
+        - /etc/crontab
+        - /var/spool/cron/root
+      failed_when: false
+
+    - name: Disable root login on all TTYs via securetty
+      copy:
+        content: ""
+        dest: /etc/securetty
+        owner: root
+        group: root
+        mode: "0600"
+        force: yes
+
+    - name: Verify root shell setting
+      command: getent passwd root
+      register: root_passwd
+      changed_when: false
+
+    - name: Display root account status
+      debug:
+        var: root_passwd.stdout_lines

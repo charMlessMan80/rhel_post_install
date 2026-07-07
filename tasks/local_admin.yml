@@ -1,0 +1,44 @@
+---
+- name: Create local admin account on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  vars:
+    local_admin_user: "{{ local_admin_user | default('localadmin') }}"
+    local_admin_password: "{{ local_admin_password }}"
+    local_admin_ssh_key: "{{ local_admin_ssh_key | default(omit) }}"
+  tasks:
+    - name: Create local admin user
+      user:
+        name: "{{ local_admin_user }}"
+        password: "{{ local_admin_password | password_hash('sha512') }}"
+        groups: wheel
+        append: yes
+        shell: /bin/bash
+        create_home: yes
+        state: present
+
+    - name: Ensure wheel group has sudo privileges
+      lineinfile:
+        path: /etc/sudoers.d/{{ local_admin_user }}
+        line: "{{ local_admin_user }} ALL=(ALL) NOPASSWD: ALL"
+        create: yes
+        owner: root
+        group: root
+        mode: "0440"
+        validate: "visudo -cf %s"
+
+    - name: Add SSH authorized key for local admin
+      authorized_key:
+        user: "{{ local_admin_user }}"
+        key: "{{ local_admin_ssh_key }}"
+        state: present
+      when: local_admin_ssh_key is defined and local_admin_ssh_key | length > 0
+
+    - name: Verify local admin account
+      command: id {{ local_admin_user }}
+      register: admin_id
+      changed_when: false
+
+    - name: Display local admin account info
+      debug:
+        var: admin_id.stdout_lines

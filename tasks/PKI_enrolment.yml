@@ -1,0 +1,135 @@
+---
+- name: Request certificate from AD CS via certmonger
+  hosts: rhel9_hosts
+  become: yes
+  vars:
+    adcs_ca_name: "cepces"
+    adcs_host: "{{ adcs_server }}"
+    adcs_template: "{{ adcs_cert_template | default('Machine') }}"
+    cert_key_path: "/etc/pki/tls/private/{{ ansible_fqdn }}.key"
+    cert_path: "/etc/pki/tls/certs/{{ ansible_fqdn }}.crt"
+    cert_key_size: 2048
+    krb_realm: "{{ ad_domain | upper }}"
+    cepces_endpoint: "https://{{ adcs_host }}/ADPolicyProvider_CEP_Kerberos/service.svc/CEP"
+  tasks:
+    - name: Install certmonger and cepces dependencies
+      dnf:
+        name:
+          - certmonger
+          - cepces
+          - ca-certificates
+        state: present
+
+    - name: Start and enable certmonger
+      service:
+        name: certmonger
+        state: started
+        enabled: yes
+
+    - name: Import AD CS root CA certificate
+      copy:
+        src: "{{ adcs_root_ca_cert }}"
+        dest: /etc/pki/ca-trust/source/anchors/adcs-root-ca.crt
+        owner: root
+        group: root
+        mode: "0644"
+      when: adcs_root_ca_cert is defined
+      notify: update_ca_trust
+
+    - name: Ensure cepces configuration directory exists
+      file:
+        path: /etc/cepces
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Configure cepces CEP endpoint
+      community.general.ini_file:
+        path: /etc/cepces/cepces.conf
+        section: global
+        option: endpoint
+        value: "{{ cepces_endpoint }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure cepces authentication method
+      community.general.ini_file:
+        path: /etc/cepces/cepces.conf
+        section: global
+        option: auth
+        value: Kerberos
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure cepces Kerberos realm
+      community.general.ini_file:
+        path: /etc/cepces/cepces.conf
+        section: kerberos
+        option: realm
+        value: "{{ krb_realm }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Check that the cepces CA is registered in certmonger
+      command: getcert list-cas
+      register: certmonger_cas
+      changed_when: false
+
+    - name: Fail if cepces CA is not available in certmonger
+      fail:
+        msg: >-
+          The 'cepces' CA is not registered in certmonger. Ensure the cepces
+          package is installed correctly before requesting certificates.
+      when: "'cepces' not in certmonger_cas.stdout"
+
+    - name: Check if certificate already tracked
+      command: getcert list -f {{ cert_path }}
+      register: getcert_status
+      changed_when: false
+      failed_when: false
+
+    - name: Request certificate from AD CS via certmonger (CES)
+      command: >
+        getcert request
+        -c {{ adcs_ca_name }}
+        -k {{ cert_key_path }}
+        -f {{ cert_path }}
+        -g {{ cert_key_size }}
+        -N "CN={{ ansible_fqdn }}"
+        -D {{ ansible_fqdn }}
+        -K host/{{ ansible_fqdn }}@{{ krb_realm }}
+        -T {{ adcs_template }}
+        -C "systemctl reload httpd || true"
+      when: getcert_status.rc != 0
+
+    - name: Wait for certificate issuance (up to 60s)
+      command: getcert list -f {{ cert_path }}
+      register: cert_check
+      until: "'MONITORING' in cert_check.stdout"
+      retries: 12
+      delay: 5
+      changed_when: false
+
+    - name: Verify certificate file exists
+      stat:
+        path: "{{ cert_path }}"
+      register: cert_stat
+      failed_when: not cert_stat.stat.exists
+
+    - name: Display certificate info
+      command: openssl x509 -in {{ cert_path }} -noout -subject -issuer -dates
+      register: cert_info
+      changed_when: false
+
+    - name: Show certificate details
+      debug:
+        var: cert_info.stdout_lines
+
+  handlers:
+    - name: update_ca_trust
+      command: update-ca-trust extract
+    

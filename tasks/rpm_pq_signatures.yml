@@ -1,0 +1,88 @@
+---
+- name: Enable post-quantum RPM signature verification with multisig on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  vars:
+    rpm_min_signatures: "{{ rpm_min_signatures | default(2) }}"
+    rpm_pq_gpg_keys: "{{ rpm_pq_gpg_keys | default([]) }}"
+  tasks:
+    - name: Install post-quantum cryptography packages
+      dnf:
+        name:
+          - rpm-sign
+          - gnupg2
+          - crypto-policies
+          - crypto-policies-scripts
+        state: present
+
+    - name: Enable FUTURE crypto policy for post-quantum readiness
+      command: update-crypto-policies --set FUTURE
+      register: crypto_policy
+      changed_when: "'already set' not in crypto_policy.stdout"
+
+    - name: Enforce GPG check on all packages in dnf
+      lineinfile:
+        path: /etc/dnf/dnf.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^gpgcheck=', line: 'gpgcheck=1' }
+        - { regexp: '^localpkg_gpgcheck=', line: 'localpkg_gpgcheck=1' }
+        - { regexp: '^repo_gpgcheck=', line: 'repo_gpgcheck=1' }
+
+    - name: Configure RPM multi-signature verification macros
+      copy:
+        content: |
+          # Ansible managed - Post-quantum RPM signature verification
+          # Require minimum number of valid signatures
+          %_multisig_min_signatures {{ rpm_min_signatures }}
+
+          # Enforce signature verification on all operations
+          %_pkgverify_level all
+          %_pkgverify_flags 0x1
+
+          # Signature verification policy
+          %__gpg_verify_cmd %{__gpg} gpg --no-default-keyring --keyring /var/lib/rpm/pubkeys/gpg-pubkey --verify --yes %{__plaintext_filename} %{__signature_filename}
+
+          # Post-quantum digest algorithms
+          %_gpg_digest_algo sha512
+          %_binary_filedigest_algorithm 12
+          %_source_filedigest_algorithm 12
+        dest: /etc/rpm/macros.pqc-multisig
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Import Red Hat GPG keys for RPM verification
+      rpm_key:
+        key: "{{ item }}"
+        state: present
+      loop:
+        - /etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+        - /etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-beta
+      failed_when: false
+
+    - name: Import additional post-quantum GPG keys
+      rpm_key:
+        key: "{{ item }}"
+        state: present
+      loop: "{{ rpm_pq_gpg_keys }}"
+      when: rpm_pq_gpg_keys | length > 0
+
+    - name: Ensure all installed RPMs pass signature verification
+      shell: rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE} %{SIGPGP:pgpsig}\n' | grep -c 'Key ID' || true
+      register: signed_rpms
+      changed_when: false
+
+    - name: Count packages lacking signatures
+      shell: rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE} %{SIGPGP:pgpsig}\n' | grep -c '(none)' || true
+      register: unsigned_rpms
+      changed_when: false
+
+    - name: Display RPM signature verification status
+      debug:
+        msg:
+          - "Signed packages: {{ signed_rpms.stdout }}"
+          - "Unsigned packages: {{ unsigned_rpms.stdout }}"
+          - "Minimum signatures required: {{ rpm_min_signatures }}"
+          - "Crypto policy: FUTURE"

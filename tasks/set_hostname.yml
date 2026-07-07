@@ -1,0 +1,24 @@
+---
+- name: Configure hostname on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  tasks:
+    - name: Set hostname
+      hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Ensure hostname is in /etc/hosts
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^\s*127\.0\.0\.1'
+        line: "127.0.0.1  {{ inventory_hostname }}"
+        state: present
+
+    - name: Verify hostname
+      command: hostnamectl status
+      register: hostnamectl_output
+      changed_when: false
+
+    - name: Display hostname status
+      debug:
+        var: hostnamectl_output.stdout_lines

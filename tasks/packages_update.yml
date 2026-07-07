@@ -1,0 +1,46 @@
+---
+- name: Update packages and reboot if needed on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  tasks:
+    - name: Check for available kernel updates
+      dnf:
+        list: updates
+      register: available_updates
+
+    - name: Determine if kernel update is pending
+      set_fact:
+        kernel_update_pending: "{{ available_updates.results | selectattr('name', 'match', '^kernel$') | list | length > 0 }}"
+
+    - name: Update all packages
+      dnf:
+        name: "*"
+        state: latest
+      register: pkg_update
+
+    - name: Display updated packages
+      debug:
+        msg: "{{ pkg_update.results | default(['No packages updated']) }}"
+
+    - name: Reboot if kernel was updated
+      reboot:
+        msg: "Rebooting to apply kernel updates"
+        pre_reboot_delay: 10
+        post_reboot_delay: 30
+        reboot_timeout: 600
+      when: kernel_update_pending
+
+    - name: Wait for system to come back online
+      wait_for_connection:
+        delay: 10
+        timeout: 300
+      when: kernel_update_pending
+
+    - name: Verify running kernel version
+      command: uname -r
+      register: kernel_version
+      changed_when: false
+
+    - name: Display kernel version
+      debug:
+        var: kernel_version.stdout
