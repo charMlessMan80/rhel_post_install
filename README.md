@@ -1,16 +1,11 @@
 # RHEL 9 Post-Installation Configuration
 
 Automated post-installation hardening and configuration for Red Hat Enterprise
-Linux 9 hosts. The same workflow is provided in two interchangeable forms:
-
-- **Ansible playbook** (`main.yml` + `tasks/`) — the primary, idempotent implementation.
-- **Standalone Bash script** (`shell/ad_pki.sh`) — a self-contained translation of
-  the playbook for hosts where Ansible is not available.
+Linux 9 hosts, implemented as an idempotent Ansible playbook (`main.yml` + `tasks/`).
 
 ## Features
 
-Each module can be enabled or skipped through inventory variables (Ansible) or the
-configuration block at the top of the script (Bash).
+Each module can be enabled or skipped through inventory / group variables.
 
 | Module | File | Purpose |
 | --- | --- | --- |
@@ -40,8 +35,6 @@ inventory/
   hosts.ini                  # Hosts (group variables live in group_vars/)
 tasks/                       # One task file per module
 templates/                   # Jinja2 templates (sssd, auditd rules)
-shell/
-  ad_pki.sh                  # Standalone Bash equivalent of the full playbook
 ```
 
 ## Requirements
@@ -87,24 +80,6 @@ shell/
 
 > Modules guarded by `when:` conditions are skipped automatically when their
 > required variables are undefined or empty.
-
-## Usage — Bash script
-
-For hosts without Ansible, `shell/ad_pki.sh` performs the same steps.
-
-1. Edit the configuration block at the top of the script (mirrors the inventory variables).
-2. Copy it to the target host and run as root:
-
-   ```bash
-   sudo ./shell/ad_pki.sh
-   ```
-
-Notes:
-
-- The script must run **as root** on a **RHEL 9** host.
-- Unlike Ansible, Bash cannot resume across a reboot. If a kernel update triggers a
-  reboot, re-run the script after the host is back online.
-- Empty configuration values cause the corresponding module to be skipped.
 
 ## PKI enrollment (AD CS via CES/CEP)
 
