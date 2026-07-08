@@ -1,0 +1,65 @@
+---
+# Group variables for the rhel9_hosts inventory group.
+# Store secrets (passwords, keys) with ansible-vault rather than in plaintext.
+
+ansible_python_interpreter: /usr/bin/python3
+
+# --- Red Hat Subscription Manager -------------------------------------------
+# rhsm_username: your_rhsm_username
+# rhsm_password: your_rhsm_password
+# rhsm_auto_attach: true
+# rhsm_repos:
+#   - rhel-9-for-x86_64-baseos-rpms
+#   - rhel-9-for-x86_64-appstream-rpms
+# rhsm_proxy_hostname: proxy.example.com
+# rhsm_proxy_port: 3128
+
+# --- Active Directory -------------------------------------------------------
+ad_domain: example.com
+ad_join_user: admin
+# ad_join_password: changeme          # Use ansible-vault in production
+ad_dns_servers:
+  - 10.0.0.1
+  - 10.0.0.2
+ad_allowed_groups:
+  - linux-admins
+  - linux-users
+# ad_ou: "OU=Servers,DC=example,DC=com"
+
+# --- DNS --------------------------------------------------------------------
+dns_servers:
+  - 8.8.8.8
+  - 8.8.4.4
+dns_search_domains:
+  - example.com
+
+# --- NTP --------------------------------------------------------------------
+ntp_servers:
+  - 0.rhel.pool.ntp.org
+  - 1.rhel.pool.ntp.org
+  - 2.rhel.pool.ntp.org
+ntp_timezone: UTC
+
+# --- Post-quantum RPM signature verification --------------------------------
+rpm_min_signatures: 2
+# rpm_pq_gpg_keys: []                 # Additional PQ GPG key URLs or paths
+
+# --- GRUB security ----------------------------------------------------------
+grub_superuser: grubadmin
+# grub_password: changeme             # Use ansible-vault in production
+
+# --- Local admin account ----------------------------------------------------
+local_admin_user: localadmin
+# local_admin_password: changeme      # Use ansible-vault in production
+# local_admin_ssh_key: "ssh-rsa AAAA..."
+
+# --- Firewall ---------------------------------------------------------------
+ssh_allowed_ips:
+  - 10.0.0.0/24
+  - 192.168.1.0/24
+firewall_zone: public
+
+# --- AD CS / certmonger -----------------------------------------------------
+adcs_server: ""                       # leave empty to skip module (e.g. "ca.example.com")
+adcs_cert_template: Machine
+# adcs_root_ca_cert: files/adcs-root-ca.crt

@@ -34,8 +34,10 @@ configuration block at the top of the script (Bash).
 
 ```
 main.yml                     # Playbook entry point (includes all task files)
+group_vars/
+  rhel9_hosts.yml            # Variables for the rhel9_hosts group
 inventory/
-  hosts.ini                  # Hosts and per-group variables
+  hosts.ini                  # Hosts (group variables live in group_vars/)
 tasks/                       # One task file per module
 templates/                   # Jinja2 templates (sssd, auditd rules)
 shell/
