@@ -72,11 +72,7 @@
     - name: Configure SSSD for AD
       blockinfile:
         path: /etc/sssd/sssd.conf
-        block: |
-          ldap_tls_reqcert = demand
-          ad_gpo_access_control = enforcing
-          fallback_homedir = /home/%u@%d
-          default_shell = /bin/bash
+        block: "{{ lookup('template', 'sssd_ad.conf.j2') }}"
         marker: "# {mark} ANSIBLE MANAGED - AD CONFIG"
       notify: restart_sssd
 

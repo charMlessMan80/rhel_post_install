@@ -1,0 +1,10 @@
+ldap_tls_reqcert = demand
+ad_gpo_access_control = enforcing
+fallback_homedir = {{ sssd_fallback_homedir | default('/home/%u@%d') }}
+default_shell = {{ sssd_default_shell | default('/bin/bash') }}
+# DNS dynamic update
+dyndns_update = {{ sssd_dyndns_update | default(true) | lower }}
+dyndns_refresh_interval = {{ sssd_dyndns_refresh_interval | default(43200) }}
+dyndns_update_ptr = {{ sssd_dyndns_update_ptr | default(true) | lower }}
+dyndns_auth = {{ sssd_dyndns_auth | default('GSS-TSIG') }}
+dyndns_ttl = {{ sssd_dyndns_ttl | default(3600) }}
