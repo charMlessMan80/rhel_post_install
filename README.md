@@ -26,6 +26,7 @@ configuration block at the top of the script (Bash).
 | SSH hardening | `tasks/ssh_hardening.yml` | Disable root SSH login. |
 | Secure root | `tasks/secure_root.yml` | Lock root, restrict `su`, disable TTY root login. |
 | GRUB password | `tasks/secure_grub.yml` | Protect the bootloader with a PBKDF2 password. |
+| Audit logging | `tasks/audit_config.yml` | Configure `auditd` for full "who did what" logging (commands, identity, privilege, file changes). |
 | Disable interactive startup | `tasks/disable_interactive_startup.yml` | Remove single-user/rescue/SysRq/Ctrl+Alt+Del escapes. |
 | Firewall | `tasks/firewall_config.yml` | Restrict SSH to trusted source networks via firewalld. |
 
@@ -36,6 +37,7 @@ main.yml                     # Playbook entry point (includes all task files)
 inventory/
   hosts.ini                  # Hosts and per-group variables
 tasks/                       # One task file per module
+templates/                   # Jinja2 templates (sssd, auditd rules)
 shell/
   ad_pki.sh                  # Standalone Bash equivalent of the full playbook
 ```
@@ -79,6 +81,7 @@ shell/
 | `local_admin_user`, `local_admin_password`, `local_admin_ssh_key` | Local admin account. |
 | `grub_superuser`, `grub_password` | GRUB protection (module skipped if `grub_password` unset). |
 | `ssh_allowed_ips`, `firewall_zone` | Firewall SSH allow-list. |
+| `audit_buffer_size`, `audit_failure_mode`, `audit_rate_limit`, `audit_immutable` | auditd tuning (buffer, failure action, rate limit, lock rules with `-e 2`). |
 
 > Modules guarded by `when:` conditions are skipped automatically when their
 > required variables are undefined or empty.
@@ -136,6 +139,41 @@ getcert resubmit -f /etc/pki/tls/certs/<fqdn>.crt  # force an immediate renewal
 
 > Ensure the AD CS certificate template auto-issues (no manual CA approval) for the
 > enrollment and renewals to remain hands-off.
+
+## Audit logging (who did what)
+
+The `tasks/audit_config.yml` module configures the Linux Audit daemon (`auditd`) for
+comprehensive accountability, rendering its rules from `templates/audit.rules.j2` into
+`/etc/audit/rules.d/99-who-did-what.rules`.
+
+What is captured:
+
+- **Every command** run by real users and by root (`execve`), attributed to the login
+  user (`auid`) even after `sudo`/`su`.
+- **Full typed command lines** via `pam_tty_audit` (system-auth / password-auth).
+- **Identity & account changes** (`/etc/passwd`, `/etc/shadow`, `/etc/group`, sudoers).
+- **Logins and sessions** (`utmp`/`wtmp`/`btmp`, faillog, lastlog, PAM).
+- **Privilege escalation** (`su`, `sudo`), file access/deletion, permission and
+  ownership changes, network/time configuration, and kernel module operations.
+- **Tampering with the audit configuration** itself.
+
+Notes:
+
+- auditd is restarted with `service auditd restart` (systemd cannot restart it directly);
+  rules are (re)loaded with `augenrules --load`.
+- The kernel is booted with `audit=1 audit_backlog_limit=8192` so events are captured
+  from early boot.
+- Set `audit_immutable: true` to make the rule set immutable (`-e 2`); changes then
+  require a reboot.
+
+Useful commands:
+
+```bash
+auditctl -l                       # list loaded rules
+ausearch -k user_commands         # commands run by users
+ausearch -k priv_esc              # privilege escalation events
+aureport -au                      # authentication report
+```
 
 ## Security notes
 
