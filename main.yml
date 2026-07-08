@@ -49,6 +49,9 @@
       include_tasks: tasks/secure_grub.yml
       when: grub_password is defined
 
+    - name: Include auditd configuration tasks
+      include_tasks: tasks/audit_config.yml
+
     - name: Include disable interactive startup tasks
       include_tasks: tasks/disable_interactive_startup.yml
 

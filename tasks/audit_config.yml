@@ -1,0 +1,87 @@
+---
+- name: Configure auditd for complete "who did what" logging on RHEL 9
+  hosts: rhel9_hosts
+  become: yes
+  tasks:
+    - name: Install the audit package
+      dnf:
+        name:
+          - audit
+          - audit-libs
+        state: present
+
+    - name: Ensure auditd is enabled and running
+      service:
+        name: auditd
+        state: started
+        enabled: yes
+
+    - name: Configure auditd main settings
+      lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: "^#?\\s*{{ item.key }}\\s*="
+        line: "{{ item.key }} = {{ item.value }}"
+        owner: root
+        group: root
+        mode: "0640"
+      loop:
+        - { key: "log_format", value: "ENRICHED" }
+        - { key: "log_group", value: "root" }
+        - { key: "max_log_file", value: "50" }
+        - { key: "num_logs", value: "10" }
+        - { key: "max_log_file_action", value: "ROTATE" }
+        - { key: "space_left_action", value: "SYSLOG" }
+        - { key: "admin_space_left_action", value: "SINGLE" }
+        - { key: "disk_full_action", value: "SYSLOG" }
+        - { key: "flush", value: "INCREMENTAL_ASYNC" }
+      notify: restart_auditd
+
+    - name: Deploy comprehensive audit rules
+      template:
+        src: audit.rules.j2
+        dest: /etc/audit/rules.d/99-who-did-what.rules
+        owner: root
+        group: root
+        mode: "0600"
+        validate: "auditctl -R %s"
+      notify: reload_audit_rules
+
+    - name: Capture full shell command input for all users (pam_tty_audit)
+      lineinfile:
+        path: /etc/pam.d/system-auth
+        regexp: '^session\s+required\s+pam_tty_audit\.so'
+        line: "session     required      pam_tty_audit.so disable=* enable=* log_passwd"
+        insertafter: '^session'
+
+    - name: Capture full shell command input for all users on password-auth
+      lineinfile:
+        path: /etc/pam.d/password-auth
+        regexp: '^session\s+required\s+pam_tty_audit\.so'
+        line: "session     required      pam_tty_audit.so disable=* enable=* log_passwd"
+        insertafter: '^session'
+
+    - name: Ensure audit logs are captured before the kernel starts (audit=1)
+      command: grubby --update-kernel=ALL --args="audit=1 audit_backlog_limit=8192"
+      changed_when: false
+
+    - name: Load the audit rules now
+      command: augenrules --load
+      register: augenrules_load
+      changed_when: "'No rules' not in augenrules_load.stderr"
+      failed_when: augenrules_load.rc != 0
+
+    - name: Verify audit rules are loaded
+      command: auditctl -l
+      register: auditctl_list
+      changed_when: false
+
+    - name: Display loaded audit rules count
+      debug:
+        msg: "{{ auditctl_list.stdout_lines | length }} audit rules loaded."
+
+  handlers:
+    - name: reload_audit_rules
+      command: augenrules --load
+
+    - name: restart_auditd
+      command: service auditd restart

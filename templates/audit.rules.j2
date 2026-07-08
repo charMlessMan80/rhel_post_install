@@ -1,0 +1,87 @@
+## Audit rules for complete "who did what" logging
+## Managed by Ansible - do not edit manually
+## Loaded via augenrules from /etc/audit/rules.d/
+
+## --- Reset any existing rules -------------------------------------------
+-D
+
+## --- Buffer / failure settings ------------------------------------------
+## Increase buffer size to survive busy periods
+-b {{ audit_buffer_size | default(8192) }}
+## Panic behaviour on failure: 1 = printk (log), 2 = panic
+-f {{ audit_failure_mode | default(1) }}
+## Limit how many events per second (0 = no limit)
+-r {{ audit_rate_limit | default(0) }}
+
+## --- Identity & account management --------------------------------------
+-w /etc/group -p wa -k identity
+-w /etc/passwd -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/security/opasswd -p wa -k identity
+-w /etc/sudoers -p wa -k scope
+-w /etc/sudoers.d/ -p wa -k scope
+
+## --- Authentication & sessions ------------------------------------------
+-w /var/log/faillog -p wa -k logins
+-w /var/log/lastlog -p wa -k logins
+-w /var/log/tallylog -p wa -k logins
+-w /var/run/utmp -p wa -k session
+-w /var/log/wtmp -p wa -k session
+-w /var/log/btmp -p wa -k session
+-w /etc/pam.d/ -p wa -k pam
+-w /etc/nsswitch.conf -p wa -k nss
+
+## --- Privilege escalation -----------------------------------------------
+-w /bin/su -p x -k priv_esc
+-w /usr/bin/sudo -p x -k priv_esc
+-w /etc/sudoers -p rw -k priv_esc
+
+## --- Track all commands executed by users (who ran what) ----------------
+## auid>=1000 = real logged-in users, auid!=unset excludes daemons
+-a always,exit -F arch=b64 -S execve -F auid>=1000 -F auid!=4294967295 -k user_commands
+-a always,exit -F arch=b32 -S execve -F auid>=1000 -F auid!=4294967295 -k user_commands
+## Track privileged (root) command execution
+-a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=4294967295 -k root_commands
+-a always,exit -F arch=b32 -S execve -F euid=0 -F auid>=1000 -F auid!=4294967295 -k root_commands
+
+## --- File access / modification attempts --------------------------------
+## Unauthorized access attempts (permission denied / does not exist)
+-a always,exit -F arch=b64 -S open,openat,truncate,ftruncate,creat -F exit=-EACCES -F auid>=1000 -F auid!=4294967295 -k file_access
+-a always,exit -F arch=b64 -S open,openat,truncate,ftruncate,creat -F exit=-EPERM -F auid>=1000 -F auid!=4294967295 -k file_access
+## File deletion / rename by users
+-a always,exit -F arch=b64 -S unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=4294967295 -k file_delete
+
+## --- Permission & ownership changes -------------------------------------
+-a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=4294967295 -k perm_mod
+-a always,exit -F arch=b64 -S chown,fchown,fchownat,lchown -F auid>=1000 -F auid!=4294967295 -k perm_mod
+-a always,exit -F arch=b64 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=4294967295 -k perm_mod
+
+## --- Network / system configuration -------------------------------------
+-a always,exit -F arch=b64 -S sethostname,setdomainname -k system_locale
+-w /etc/hosts -p wa -k system_locale
+-w /etc/hostname -p wa -k system_locale
+-w /etc/sysconfig/network -p wa -k system_locale
+-w /etc/sysconfig/network-scripts/ -p wa -k system_locale
+-w /etc/NetworkManager/ -p wa -k system_locale
+-w /etc/localtime -p wa -k time_change
+-a always,exit -F arch=b64 -S adjtimex,settimeofday,clock_settime -k time_change
+
+## --- Kernel modules -----------------------------------------------------
+-w /sbin/insmod -p x -k modules
+-w /sbin/rmmod -p x -k modules
+-w /sbin/modprobe -p x -k modules
+-a always,exit -F arch=b64 -S init_module,finit_module,delete_module -k modules
+
+## --- Access to audit configuration itself -------------------------------
+-w /etc/audit/ -p wa -k auditconfig
+-w /etc/libaudit.conf -p wa -k auditconfig
+-w /etc/audisp/ -p wa -k audispconfig
+
+## --- Make the configuration immutable (must be last) --------------------
+## Requires a reboot to change the rules after loading.
+{% if audit_immutable | default(false) %}
+-e 2
+{% else %}
+-e 1
+{% endif %}
