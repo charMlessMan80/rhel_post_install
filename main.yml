@@ -25,6 +25,7 @@
 
     - name: Include NTP configuration tasks
       include_tasks: tasks/NTP_config.yml
+      when: ntp_servers is defined and ntp_servers | length > 0
 
     - name: Include AD domain join tasks
       include_tasks: tasks/AD_join.yml
