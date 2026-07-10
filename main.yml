@@ -11,6 +11,7 @@
 
     - name: Include DNS configuration tasks
       include_tasks: tasks/DNS_config.yml
+      when: dns_servers is defined and dns_servers | length > 0
 
     - name: Include Red Hat Subscription Manager tasks
       include_tasks: tasks/RHSM_config.yml
