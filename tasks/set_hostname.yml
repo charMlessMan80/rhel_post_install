@@ -11,7 +11,7 @@
       lineinfile:
         path: /etc/hosts
         regexp: '^\s*127\.0\.0\.1'
-        line: "127.0.0.1  {{ inventory_hostname }}"
+        line: "127.0.0.1  {{ inventory_hostname }}.{{ ad_domain }} {{ inventory_hostname }}"
         state: present
 
     - name: Verify hostname
