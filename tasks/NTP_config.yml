@@ -1,15 +1,15 @@
 ---
 - name: Install chrony
-  dnf:
+  ansible.builtin.dnf:
     name: chrony
     state: present
 
 - name: Set timezone
-  timezone:
+  ansible.builtin.timezone:
     name: "{{ ntp_timezone | default('UTC') }}"
 
 - name: Remove default pool/server entries
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/chrony.conf
     regexp: "{{ item }}"
     state: absent
@@ -18,29 +18,29 @@
     - '^server\s+'
 
 - name: Configure NTP servers
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/chrony.conf
     line: "server {{ item }} iburst"
     insertafter: "^#.*server"
   loop: "{{ ntp_servers | default(['0.rhel.pool.ntp.org', '1.rhel.pool.ntp.org', '2.rhel.pool.ntp.org']) }}"
 
 - name: Enable NTP makestep for initial large offset
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/chrony.conf
     regexp: '^makestep'
     line: "makestep 1.0 3"
 
 - name: Enable and restart chronyd
-  service:
+  ansible.builtin.service:
     name: chronyd
     state: restarted
     enabled: true
 
 - name: Wait for chrony to sync
-  command: chronyc tracking
+  ansible.builtin.command: chronyc tracking
   register: chrony_status
   changed_when: false
 
 - name: Display chrony sync status
-  debug:
+  ansible.builtin.debug:
     var: chrony_status.stdout_lines

@@ -1,6 +1,6 @@
 ---
 - name: Disable root login via SSH
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config
     regexp: '^#?\s*PermitRootLogin'
     line: "PermitRootLogin no"
@@ -8,7 +8,7 @@
   notify: restart_sshd
 
 - name: Disable root login in sshd_config.d drop-ins
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/ssh/sshd_config.d/01-permitrootlogin.conf
     line: "PermitRootLogin no"
     create: true
@@ -19,10 +19,10 @@
   notify: restart_sshd
 
 - name: Verify SSH root login is disabled
-  command: sshd -T
+  ansible.builtin.command: sshd -T
   register: sshd_config
   changed_when: false
 
 - name: Display PermitRootLogin setting
-  debug:
+  ansible.builtin.debug:
     msg: "{{ sshd_config.stdout_lines | select('match', '(?i)^permitrootlogin') | list }}"

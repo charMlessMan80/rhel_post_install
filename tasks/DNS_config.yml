@@ -1,6 +1,6 @@
 ---
 - name: Get active NetworkManager connection
-  command: nmcli -t -f NAME con show --active
+  ansible.builtin.command: nmcli -t -f NAME con show --active
   register: nm_active_conn
   changed_when: false
 
@@ -15,7 +15,7 @@
   notify: restart_networkmanager
 
 - name: Ensure NetworkManager manages resolv.conf
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/NetworkManager/conf.d/dns.conf
     line: "[main]\ndns=default"
     create: true
@@ -24,16 +24,16 @@
     mode: "0644"
 
 - name: Reload NetworkManager to apply DNS settings
-  service:
+  ansible.builtin.service:
     name: NetworkManager
     state: reloaded
 
 - name: Verify DNS resolution
-  command: host google.com
+  ansible.builtin.command: host google.com
   register: dns_check
   changed_when: false
   failed_when: false
 
 - name: Display DNS verification result
-  debug:
+  ansible.builtin.debug:
     var: dns_check.stdout_lines

@@ -1,6 +1,6 @@
 ---
 - name: Install post-quantum cryptography packages
-  dnf:
+  ansible.builtin.dnf:
     name:
       - rpm-sign
       - gnupg2
@@ -9,12 +9,12 @@
     state: present
 
 - name: Enable FUTURE crypto policy for post-quantum readiness
-  command: update-crypto-policies --set FUTURE
+  ansible.builtin.command: update-crypto-policies --set FUTURE
   register: crypto_policy
   changed_when: "'already set' not in crypto_policy.stdout"
 
 - name: Enforce GPG check on all packages in dnf
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/dnf/dnf.conf
     regexp: "{{ item.regexp }}"
     line: "{{ item.line }}"
@@ -24,7 +24,7 @@
     - { regexp: '^repo_gpgcheck=', line: 'repo_gpgcheck=1' }
 
 - name: Configure RPM multi-signature verification macros
-  copy:
+  ansible.builtin.copy:
     content: |
       # Ansible managed - Post-quantum RPM signature verification
       # Require minimum number of valid signatures
@@ -47,7 +47,7 @@
     mode: "0644"
 
 - name: Import Red Hat GPG keys for RPM verification
-  rpm_key:
+  ansible.builtin.rpm_key:
     key: "{{ item }}"
     state: present
   loop:
@@ -56,24 +56,24 @@
   failed_when: false
 
 - name: Import additional post-quantum GPG keys
-  rpm_key:
+  ansible.builtin.rpm_key:
     key: "{{ item }}"
     state: present
   loop: "{{ rpm_pq_gpg_keys | default([]) }}"
   when: rpm_pq_gpg_keys is defined and rpm_pq_gpg_keys | length > 0
 
 - name: Ensure all installed RPMs pass signature verification
-  shell: rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE} %{SIGPGP:pgpsig}\n' | grep -c 'Key ID' || true
+  ansible.builtin.shell: rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE} %{SIGPGP:pgpsig}\n' | grep -c 'Key ID' || true
   register: signed_rpms
   changed_when: false
 
 - name: Count packages lacking signatures
-  shell: rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE} %{SIGPGP:pgpsig}\n' | grep -c '(none)' || true
+  ansible.builtin.shell: rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE} %{SIGPGP:pgpsig}\n' | grep -c '(none)' || true
   register: unsigned_rpms
   changed_when: false
 
 - name: Display RPM signature verification status
-  debug:
+  ansible.builtin.debug:
     msg:
       - "Signed packages: {{ signed_rpms.stdout }}"
       - "Unsigned packages: {{ unsigned_rpms.stdout }}"

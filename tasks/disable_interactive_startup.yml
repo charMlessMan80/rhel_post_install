@@ -1,6 +1,6 @@
 ---
 - name: Disable systemd debug shell (emergency console)
-  systemd:
+  ansible.builtin.systemd:
     name: debug-shell.service
     enabled: false
     masked: true
@@ -8,12 +8,12 @@
   failed_when: false
 
 - name: Read current GRUB_CMDLINE_LINUX
-  command: grep '^GRUB_CMDLINE_LINUX=' /etc/default/grub
+  ansible.builtin.command: grep '^GRUB_CMDLINE_LINUX=' /etc/default/grub
   register: grub_cmdline
   changed_when: false
 
 - name: Remove interactive boot parameters from GRUB defaults
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/default/grub
     regexp: '^GRUB_CMDLINE_LINUX='
     line: '{{ grub_cmdline.stdout | regex_replace("rd\.break\s*", "") | regex_replace("init=/bin/sh\s*", "") | regex_replace("systemd\.confirm_spawn\s*", "") }}'
@@ -24,7 +24,7 @@
   # ctrl-alt-del.target is an alias of reboot.target. Ansible's
   # `systemd: masked: yes` is unreliable on aliased units, so we create
   # the /dev/null symlink directly (which is what `systemctl mask` does).
-  file:
+  ansible.builtin.file:
     src: /dev/null
     dest: /etc/systemd/system/ctrl-alt-del.target
     state: link
@@ -37,7 +37,7 @@
 # (default: reboot-force) still triggers a forced reboot after 7 presses
 # within 2s. Set it to none and reload so the running PID 1 picks it up.
 - name: Disable Ctrl+Alt+Del burst-action reboot
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/systemd/system.conf
     regexp: '^\s*#?\s*CtrlAltDelBurstAction\s*='
     line: 'CtrlAltDelBurstAction=none'
@@ -45,7 +45,7 @@
   notify: reload_systemd
 
 - name: Disable emergency and rescue mode targets
-  systemd:
+  ansible.builtin.systemd:
     name: "{{ item }}"
     masked: true
   loop:
@@ -53,7 +53,7 @@
     - rescue.service
 
 - name: Disable SysRq key
-  sysctl:
+  ansible.builtin.sysctl:
     name: kernel.sysrq
     value: "0"
     state: present
@@ -61,11 +61,11 @@
     reload: true
 
 - name: Verify interactive startup is disabled
-  command: systemctl is-enabled debug-shell.service
+  ansible.builtin.command: systemctl is-enabled debug-shell.service
   register: debug_shell_status
   changed_when: false
   failed_when: false
 
 - name: Display interactive startup status
-  debug:
+  ansible.builtin.debug:
     msg: "debug-shell: {{ debug_shell_status.stdout | default('masked') }}, SysRq: disabled, Ctrl+Alt+Del: masked"

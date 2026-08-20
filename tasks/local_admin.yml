@@ -1,6 +1,6 @@
 ---
 - name: Create local admin user
-  user:
+  ansible.builtin.user:
     name: "{{ local_admin_user | default('localadmin') }}"
     password: "{{ local_admin_password | password_hash('sha512') }}"
     groups: wheel
@@ -10,7 +10,7 @@
     state: present
 
 - name: Ensure wheel group has sudo privileges
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: "/etc/sudoers.d/{{ local_admin_user | default('localadmin') }}"
     line: "{{ local_admin_user | default('localadmin') }} ALL=(ALL) NOPASSWD: ALL"
     create: true
@@ -20,17 +20,17 @@
     validate: "visudo -cf %s"
 
 - name: Add SSH authorized key for local admin
-  authorized_key:
+  ansible.builtin.authorized_key:
     user: "{{ local_admin_user | default('localadmin') }}"
     key: "{{ local_admin_ssh_key }}"
     state: present
   when: local_admin_ssh_key is defined and local_admin_ssh_key | length > 0
 
 - name: Verify local admin account
-  command: "id {{ local_admin_user | default('localadmin') }}"
+  ansible.builtin.command: "id {{ local_admin_user | default('localadmin') }}"
   register: admin_id
   changed_when: false
 
 - name: Display local admin account info
-  debug:
+  ansible.builtin.debug:
     var: admin_id.stdout_lines

@@ -9,7 +9,7 @@
   notify: restart_networkmanager
 
 - name: Install required packages for AD join
-  dnf:
+  ansible.builtin.dnf:
     name:
       - realmd
       - oddjob
@@ -23,17 +23,17 @@
     state: present
 
 - name: Check if already joined to domain
-  command: realm list
+  ansible.builtin.command: realm list
   register: realm_list_check
   changed_when: false
 
 - name: Discover the Active Directory domain
-  command: "realm discover {{ ad_domain }}"
+  ansible.builtin.command: "realm discover {{ ad_domain }}"
   register: realm_discover
   when: ad_domain not in realm_list_check.stdout
 
 - name: Join the host to the Active Directory domain
-  shell: >-
+  ansible.builtin.shell: >-
     echo '{{ ad_join_password }}' | realm join --automatic-id-mapping=no
     --user={{ ad_join_user }}
     {{ '--computer-ou=' + ad_ou if ad_ou is defined else '' }}
@@ -42,36 +42,36 @@
   when: ad_domain not in realm_list_check.stdout
 
 - name: Verify the host is joined to the domain
-  shell: realm list | grep -q "{{ ad_domain }}"
+  ansible.builtin.shell: realm list | grep -q "{{ ad_domain }}"
   register: realm_list
   changed_when: false
 
 - name: Enable automatic home directory creation
-  command: authselect select sssd with-mkhomedir --force
+  ansible.builtin.command: authselect select sssd with-mkhomedir --force
 
 - name: Start and enable the oddjobd service
-  service:
+  ansible.builtin.service:
     name: oddjobd
     state: started
     enabled: true
 
 - name: Configure realm to deny all users by default
-  command: realm deny --all
+  ansible.builtin.command: realm deny --all
 
 - name: Allow specific AD groups to log in
-  command: realm permit -g "{{ item }}"
+  ansible.builtin.command: realm permit -g "{{ item }}"
   loop: "{{ ad_allowed_groups | default([]) }}"
   when: ad_allowed_groups is defined and ad_allowed_groups | length > 0
 
 - name: Configure SSSD for AD
-  blockinfile:
+  ansible.builtin.blockinfile:
     path: /etc/sssd/sssd.conf
     block: "{{ lookup('template', 'sssd_ad.conf.j2') }}"
     marker: "# {mark} ANSIBLE MANAGED - AD CONFIG"
   notify: restart_sssd
 
 - name: Start and enable SSSD
-  service:
+  ansible.builtin.service:
     name: sssd
     state: started
     enabled: true

@@ -1,6 +1,6 @@
 ---
 - name: Configure RHSM proxy hostname in /etc/rhsm/rhsm.conf
-  ini_file:
+  community.general.ini_file:
     path: /etc/rhsm/rhsm.conf
     section: server
     option: proxy_hostname
@@ -12,7 +12,7 @@
   when: rhsm_proxy_hostname is defined and rhsm_proxy_hostname | length > 0
 
 - name: Configure RHSM proxy port in /etc/rhsm/rhsm.conf
-  ini_file:
+  community.general.ini_file:
     path: /etc/rhsm/rhsm.conf
     section: server
     option: proxy_port
@@ -24,13 +24,13 @@
   when: rhsm_proxy_port is defined and rhsm_proxy_port | length > 0
 
 - name: Check if system is already registered
-  command: subscription-manager identity
+  ansible.builtin.command: subscription-manager identity
   register: rhsm_identity
   changed_when: false
   failed_when: false
 
 - name: Register with Red Hat Subscription Manager
-  redhat_subscription:
+  community.general.redhat_subscription:
     username: "{{ rhsm_username }}"
     password: "{{ rhsm_password }}"
     auto_attach: "{{ rhsm_auto_attach | default(true) }}"
@@ -39,17 +39,17 @@
   no_log: true
 
 - name: Enable specific repositories
-  rhsm_repository:
+  community.general.rhsm_repository:
     name: "{{ item }}"
     state: enabled
   loop: "{{ rhsm_repos | default([]) }}"
   when: rhsm_repos is defined and rhsm_repos | length > 0
 
 - name: Verify subscription status
-  command: subscription-manager status
+  ansible.builtin.command: subscription-manager status
   register: rhsm_status
   changed_when: false
 
 - name: Display subscription status
-  debug:
+  ansible.builtin.debug:
     var: rhsm_status.stdout_lines

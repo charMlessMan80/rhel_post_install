@@ -1,20 +1,20 @@
 ---
 - name: Set hostname
-  hostname:
+  ansible.builtin.hostname:
     name: "{{ inventory_hostname }}"
 
 - name: Ensure hostname is in /etc/hosts
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/hosts
     regexp: '^\s*127\.0\.0\.1'
     line: "127.0.0.1  {{ inventory_hostname }}.{{ ad_domain }} {{ inventory_hostname }}"
     state: present
 
 - name: Verify hostname
-  command: hostnamectl status
+  ansible.builtin.command: hostnamectl status
   register: hostnamectl_output
   changed_when: false
 
 - name: Display hostname status
-  debug:
+  ansible.builtin.debug:
     var: hostnamectl_output.stdout_lines

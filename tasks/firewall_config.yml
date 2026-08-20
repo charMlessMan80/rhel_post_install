@@ -1,11 +1,11 @@
 ---
 - name: Install firewalld
-  dnf:
+  ansible.builtin.dnf:
     name: firewalld
     state: present
 
 - name: Start and enable firewalld
-  service:
+  ansible.builtin.service:
     name: firewalld
     state: started
     enabled: true
@@ -28,10 +28,10 @@
   loop: "{{ ssh_allowed_ips | default([]) }}"
 
 - name: Verify active firewall rules
-  command: "firewall-cmd --zone={{ firewall_zone | default('public') }} --list-all"
+  ansible.builtin.command: "firewall-cmd --zone={{ firewall_zone | default('public') }} --list-all"
   register: firewall_status
   changed_when: false
 
 - name: Display firewall status
-  debug:
+  ansible.builtin.debug:
     var: firewall_status.stdout_lines

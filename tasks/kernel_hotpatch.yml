@@ -1,37 +1,37 @@
 ---
 - name: Install kpatch and kpatch-dnf
-  dnf:
+  ansible.builtin.dnf:
     name:
       - kpatch
       - kpatch-dnf
     state: present
 
 - name: Enable kpatch-dnf plugin for automatic kernel patches
-  command: dnf kpatch auto
+  ansible.builtin.command: dnf kpatch auto
   register: kpatch_auto
   changed_when: "'already enabled' not in kpatch_auto.stdout"
   failed_when: false
 
 - name: Check for available kpatch modules
-  command: kpatch list
+  ansible.builtin.command: kpatch list
   register: kpatch_list
   changed_when: false
 
 - name: Install available kpatch modules
-  dnf:
+  ansible.builtin.dnf:
     name: "kpatch-patch-*"
     state: latest
   register: kpatch_install
 
 - name: Load all installed kpatch modules
-  command: kpatch load --all
+  ansible.builtin.command: kpatch load --all
   when: kpatch_install.changed
 
 - name: Verify loaded kpatch modules
-  command: kpatch list
+  ansible.builtin.command: kpatch list
   register: kpatch_status
   changed_when: false
 
 - name: Display kpatch status
-  debug:
+  ansible.builtin.debug:
     var: kpatch_status.stdout_lines
