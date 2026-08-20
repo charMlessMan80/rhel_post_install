@@ -1,6 +1,7 @@
 ldap_tls_reqcert = demand
 ad_gpo_access_control = enforcing
-fallback_homedir = {{ sssd_fallback_homedir | default('/home/%u@%d') }}
+fallback_homedir = {{ sssd_fallback_homedir | default('/home/%u') }}
+use_fully_qualified_names = {{ sssd_use_fully_qualified_names | default(false) | lower }}
 default_shell = {{ sssd_default_shell | default('/bin/bash') }}
 # DNS dynamic update
 dyndns_update = {{ sssd_dyndns_update | default(true) | lower }}
