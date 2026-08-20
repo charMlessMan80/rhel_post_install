@@ -1,64 +1,97 @@
 ---
 - name: Post-installation tasks for RHEL 9
   hosts: rhel9_hosts
-  become: yes
+  become: true
   gather_facts: true
 
-  tasks: 
-    
+  tasks:
     - name: Include hostname configuration tasks
-      include_tasks: tasks/set_hostname.yml
+      ansible.builtin.include_tasks: tasks/set_hostname.yml
 
     - name: Include DNS configuration tasks
-      include_tasks: tasks/DNS_config.yml
+      ansible.builtin.include_tasks: tasks/DNS_config.yml
       when: dns_servers is defined and dns_servers | length > 0
 
     - name: Include Red Hat Subscription Manager tasks
-      include_tasks: tasks/RHSM_config.yml
+      ansible.builtin.include_tasks: tasks/RHSM_config.yml
       when: rhsm_username is defined and rhsm_password is defined
 
+    - name: Include post-quantum RPM signature verification tasks
+      ansible.builtin.include_tasks: tasks/rpm_pq_signatures.yml
+
     - name: Include kernel hot patching tasks
-      include_tasks: tasks/kernel_hotpatch.yml
+      ansible.builtin.include_tasks: tasks/kernel_hotpatch.yml
       when: ansible_facts['distribution'] == "RedHat" and ansible_facts['distribution_major_version'] == "9"
 
     - name: Include packages update tasks
-      include_tasks: tasks/packages_update.yml
+      ansible.builtin.include_tasks: tasks/packages_update.yml
 
     - name: Include NTP configuration tasks
-      include_tasks: tasks/NTP_config.yml
+      ansible.builtin.include_tasks: tasks/NTP_config.yml
       when: ntp_servers is defined and ntp_servers | length > 0
 
     - name: Include AD domain join tasks
-      include_tasks: tasks/AD_join.yml
+      ansible.builtin.include_tasks: tasks/AD_join.yml
 
     - name: Include AD CS certificate enrollment tasks
-      include_tasks: tasks/PKI_enrolment.yml
+      ansible.builtin.include_tasks: tasks/PKI_enrolment.yml
       when: adcs_server is defined and adcs_server | length > 0
 
     - name: Include local admin account tasks
-      include_tasks: tasks/local_admin.yml
+      ansible.builtin.include_tasks: tasks/local_admin.yml
       when: local_admin_password is defined
 
     - name: Include SSH hardening tasks
-      include_tasks: tasks/ssh_hardening.yml
+      ansible.builtin.include_tasks: tasks/ssh_hardening.yml
       when: local_admin_password is defined
 
     - name: Include secure root shell access tasks
-      include_tasks: tasks/secure_root.yml
+      ansible.builtin.include_tasks: tasks/secure_root.yml
       when: local_admin_password is defined
 
     - name: Include GRUB password protection tasks
-      include_tasks: tasks/secure_grub.yml
+      ansible.builtin.include_tasks: tasks/secure_grub.yml
       when: grub_password is defined
 
     - name: Include auditd configuration tasks
-      include_tasks: tasks/audit_config.yml
+      ansible.builtin.include_tasks: tasks/audit_config.yml
 
     - name: Include disable interactive startup tasks
-      include_tasks: tasks/disable_interactive_startup.yml
+      ansible.builtin.include_tasks: tasks/disable_interactive_startup.yml
 
     - name: Include firewall configuration tasks
-      include_tasks: tasks/firewall_config.yml
+      ansible.builtin.include_tasks: tasks/firewall_config.yml
       when: ssh_allowed_ips is defined and ssh_allowed_ips | length > 0
-    
-    
+
+  handlers:
+    - name: restart_networkmanager
+      ansible.builtin.service:
+        name: NetworkManager
+        state: restarted
+
+    - name: restart_sssd
+      ansible.builtin.service:
+        name: sssd
+        state: restarted
+
+    - name: restart_auditd
+      ansible.builtin.command: service auditd restart
+
+    - name: reload_audit_rules
+      ansible.builtin.command: augenrules --load
+
+    - name: regenerate_grub
+      ansible.builtin.command: grub2-mkconfig -o /boot/grub2/grub.cfg
+
+    - name: reload_systemd
+      # daemon-reexec is required (not daemon-reload) for PID 1 to re-read
+      # /etc/systemd/system.conf, including CtrlAltDelBurstAction.
+      ansible.builtin.command: systemctl daemon-reexec
+
+    - name: update_ca_trust
+      ansible.builtin.command: update-ca-trust extract
+
+    - name: restart_sshd
+      ansible.builtin.service:
+        name: sshd
+        state: restarted
