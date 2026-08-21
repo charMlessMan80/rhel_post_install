@@ -63,6 +63,19 @@
   loop: "{{ ad_allowed_groups | default([]) }}"
   when: ad_allowed_groups is defined and ad_allowed_groups | length > 0
 
+- name: Grant AD allowed groups full sudo access (password required, one file per group)
+  ansible.builtin.copy:
+    content: |
+      %{{ item }} ALL=(ALL:ALL) ALL
+      %{{ item }}@{{ ad_domain | upper }} ALL=(ALL:ALL) ALL
+    dest: "/etc/sudoers.d/{{ item }}"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "visudo -cf %s"
+  loop: "{{ ad_allowed_groups | default([]) }}"
+  when: ad_allowed_groups is defined and ad_allowed_groups | length > 0
+
 - name: Configure SSSD for AD
   ansible.builtin.blockinfile:
     path: /etc/sssd/sssd.conf
