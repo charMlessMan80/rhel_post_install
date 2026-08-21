@@ -1,5 +1,9 @@
 ldap_tls_reqcert = demand
 ad_gpo_access_control = enforcing
+auth_provider = ad
+krb5_lifetime = {{ sssd_krb5_lifetime | default('24h') }}
+krb5_renew_lifetime = {{ sssd_krb5_renew_lifetime | default('7d') }}
+krb5_renew_interval = {{ sssd_krb5_renew_interval | default('1h') }}
 fallback_homedir = {{ sssd_fallback_homedir | default('/home/%u') }}
 use_fully_qualified_names = {{ sssd_use_fully_qualified_names | default(false) | lower }}
 default_shell = {{ sssd_default_shell | default('/bin/bash') }}
