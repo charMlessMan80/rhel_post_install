@@ -25,6 +25,6 @@ hpam_secret_title: "SERVER01 ADMINISTRATOR"
 hpam_update_new_password: ""
 
 # --- hpam-write.yml (new secret) --------------------------------------------
-hpam_write_new_secret_title: "Ansible_test"
-hpam_write_new_username: "testuser"
-hpam_write_new_password_length: 24
+#hpam_write_new_secret_title: "Ansible_test"
+#hpam_write_new_username: "testuser"
+#hpam_write_new_password_length: 24

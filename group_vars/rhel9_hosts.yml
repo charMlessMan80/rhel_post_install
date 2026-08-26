@@ -16,8 +16,7 @@ ansible_python_interpreter: /usr/bin/python3
 
 # --- Active Directory -------------------------------------------------------
 ad_domain: example.com
-ad_join_user: admin
-# ad_join_password: changeme          # Use ansible-vault in production
+ad_join_user_title: "AD JOIN SERVICE ACCOUNT"  # HPAM secret title (see group_vars/all.yml)
 ad_dns_servers:
   - 10.0.0.1
   - 10.0.0.2

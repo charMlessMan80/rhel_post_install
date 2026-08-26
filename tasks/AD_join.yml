@@ -1,4 +1,18 @@
 ---
+# Retrieve the AD join credential from HPAM (control node operation, hence
+# delegate_to: localhost) instead of relying on pre-supplied ad_join_user/password.
+- name: Retrieve AD join credential from HPAM
+  ansible.builtin.include_tasks: tasks/hpam-read.yml
+  delegate_to: localhost
+  vars:
+    hpam_read_secret_title: "{{ ad_join_user_title }}"
+
+- name: Set AD join credential from HPAM
+  ansible.builtin.set_fact:
+    ad_join_user: "{{ hpam_read_result.username }}"
+    ad_join_password: "{{ hpam_read_result.password }}"
+  no_log: true
+
 - name: Set DNS to point to AD domain controllers
   community.general.nmcli:
     conn_name: "{{ ansible_default_ipv4.interface }}"

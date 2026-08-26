@@ -1,9 +1,17 @@
 ---
 # Provision the GRUB superuser credential in HPAM (control node operation,
 # hence delegate_to: localhost) instead of relying on a pre-supplied grub_password.
+- name: Check whether an HPAM entry already exists for the GRUB superuser account
+  ansible.builtin.include_tasks: tasks/hpam-read.yml
+  delegate_to: localhost
+  ignore_errors: true
+  vars:
+    hpam_read_secret_title: "{{ grub_superuser }}"
+
 - name: Create HPAM entry for the GRUB superuser account
   ansible.builtin.include_tasks: tasks/hpam-write.yml
   delegate_to: localhost
+  when: hpam_read_result is not defined
   vars:
     hpam_write_new_secret_title: "{{ grub_superuser }}"
     hpam_write_new_username: "{{ grub_superuser }}"
