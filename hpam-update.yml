@@ -1,0 +1,20 @@
+---
+# Updates (writes) a credential's password in BeyondTrust Password Safe (HPAM).
+# Connection settings and the target secret are centralized in
+# group_vars/all.yml (hpam_* variables); override with -e.
+#
+# Usage:
+#   ansible-playbook hpam-update.yml -e hpam_update_new_password='NewSecretValue'
+#   ansible-playbook hpam-update.yml -e hpam_environment_code=Q -e "hpam_secret_title=OTHER ADMIN" -e hpam_update_new_password='NewSecretValue'
+
+- name: Update credential in BeyondTrust Password Safe (HPAM)
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  gather_subset:
+    - "!all"
+    - min
+
+  tasks:
+    - name: Include HPAM update tasks
+      ansible.builtin.include_tasks: tasks/hpam-update.yml

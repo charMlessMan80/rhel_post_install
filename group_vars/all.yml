@@ -1,0 +1,30 @@
+---
+# Group variables for BeyondTrust Password Safe (HPAM) integration.
+# Used by hpam-read.yml, hpam-update.yml and hpam-write.yml (repo root),
+# which run against the control node itself (hosts: localhost), so these
+# live in "all" rather than group_vars/rhel9_hosts.yml.
+#
+# Values below are anonymized placeholders — replace with your real
+# environment endpoints/paths. Store hpam_run_as_password and any
+# generated/updated secrets with ansible-vault rather than in plaintext.
+
+# --- Connection (shared by hpam-read.yml, hpam-update.yml, hpam-write.yml) --
+hpam_environment_code: "P"                     # "P" (prod) or "Q" (qa)
+hpam_base_url_qa: "https://hpam-qa.example.com:8443/BeyondTrust/api/public/v3"
+hpam_base_url_prod: "https://hpam-prod.example.com:8443/BeyondTrust/api/public/v3"
+hpam_api_key_service_url: "https://frameworkservices.example.com/vault/secrets"
+hpam_api_key_source: "MSA"
+hpam_run_as_domain: "EXAMPLE.LOCAL"
+# hpam_run_as_password: "changeme"             # Use ansible-vault in production
+hpam_run_as_password: ""
+hpam_secrets_safe_folder_path: 'example.local\folder_path'
+
+# --- hpam-read.yml / hpam-update.yml (existing secret) ----------------------
+hpam_secret_title: "SERVER01 ADMINISTRATOR"
+# hpam_update_new_password: "changeme"         # Required for hpam-update.yml, e.g. -e hpam_update_new_password='...'
+hpam_update_new_password: ""
+
+# --- hpam-write.yml (new secret) --------------------------------------------
+hpam_write_new_secret_title: "Ansible_test"
+hpam_write_new_username: "testuser"
+hpam_write_new_password_length: 24

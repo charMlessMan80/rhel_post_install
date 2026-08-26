@@ -1,0 +1,21 @@
+---
+# Creates a brand new credential entry (new user + randomly generated
+# password) in BeyondTrust Password Safe (HPAM), instead of reading one.
+# Connection settings and the new entry's defaults are centralized in
+# group_vars/all.yml (hpam_* variables); override with -e.
+#
+# Usage:
+#   ansible-playbook hpam-write.yml -e hpam_write_new_secret_title='NEW SERVER ADMIN' -e hpam_write_new_username='svc_newadmin'
+#   ansible-playbook hpam-write.yml -e hpam_environment_code=Q -e hpam_write_new_secret_title='OTHER ADMIN' -e hpam_write_new_username='svc_other'
+
+- name: Create new credential entry in BeyondTrust Password Safe (HPAM)
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  gather_subset:
+    - "!all"
+    - min
+
+  tasks:
+    - name: Include HPAM write tasks
+      ansible.builtin.include_tasks: tasks/hpam-write.yml

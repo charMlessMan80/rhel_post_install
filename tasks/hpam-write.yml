@@ -1,0 +1,193 @@
+---
+# Ansible port of hpam.sh / hpam-read.yml
+# Creates a brand new credential entry (new user + randomly generated
+# password) in BeyondTrust Password Safe (HPAM), instead of reading one.
+# Included from hpam-write.yml (repo root). Connection settings and the new
+# entry's defaults are centralized in group_vars/all.yml (hpam_* variables)
+# and can be overridden with -e.
+#
+# Shell -> Ansible translations:
+#   - curl --negotiate -u : (Kerberos)  -> uri module with use_gssapi: true
+#   - curl cookie jar (-c / -b)         -> capture/replay signin.cookies_string
+#   - id -un                            -> ansible_user_id fact
+#   - jq field extraction               -> registered .json results
+#   - trap cleanup EXIT (sign-out)      -> block / always
+#
+# Requirements on the node that runs this play:
+#   - python3-gssapi (for use_gssapi / Kerberos negotiate auth)
+#   - a valid Kerberos ticket (kinit) for the running user
+
+- name: "Validate a title and username were supplied for the new secret"
+  ansible.builtin.assert:
+    that:
+      - hpam_write_new_secret_title | length > 0
+      - hpam_write_new_username | length > 0
+    fail_msg: "[-] hpam_write_new_secret_title and hpam_write_new_username must be supplied, e.g. -e hpam_write_new_secret_title='...' -e hpam_write_new_username='...'"
+    success_msg: "New secret title and username supplied."
+
+# ===== Generate a random password for the new entry =====
+# /dev/null as the lookup "file" means a fresh password is generated on
+# every run instead of being cached/reused from a saved file.
+- name: "Generate a random password for the new secret"
+  ansible.builtin.set_fact:
+    hpam_write_new_password: "{{ lookup('ansible.builtin.password', '/dev/null', length=hpam_write_new_password_length, chars=['ascii_letters', 'digits', 'punctuation']) }}"
+  no_log: true
+
+# ===== Derived connection facts =====
+- name: "Resolve HPAM base URL for the target environment"
+  ansible.builtin.set_fact:
+    hpam_base_url: "{{ hpam_base_url_qa if hpam_environment_code == 'Q' else hpam_base_url_prod }}"
+
+- name: "Compute HPAM derived connection facts"
+  ansible.builtin.set_fact:
+    hpam_run_as_user: "{{ ansible_user_id }}@{{ hpam_run_as_domain }}"
+    hpam_api_key_url: "{{ hpam_api_key_service_url }}/API_{{ ansible_user_id }}"
+    hpam_signin_url: "{{ hpam_base_url }}/Auth/SignAppin"
+    hpam_get_folders_url: "{{ hpam_base_url }}/Secrets-Safe/Folders"
+    hpam_signout_url: "{{ hpam_base_url }}/Auth/Signout"
+
+# ===== Get API key for the current user =====
+- name: "Retrieve API key for the current user"
+  ansible.builtin.uri:
+    url: "{{ hpam_api_key_url }}"
+    method: GET
+    use_gssapi: true
+    validate_certs: false
+    return_content: true
+  register: hpam_api_key_response
+  no_log: true
+
+- name: "Validate API key was retrieved"
+  ansible.builtin.assert:
+    that:
+      - hpam_api_key_response.json is defined
+      - hpam_api_key_response.json.Value is defined
+      - hpam_api_key_response.json.Value | length > 0
+    fail_msg: "[-] Failed to retrieve API key"
+    success_msg: "API key retrieved."
+
+# ===== Construct Authentication Header =====
+- name: "Construct authentication header"
+  ansible.builtin.set_fact:
+    hpam_auth_header: >-
+      {{ 'PS-Auth key=' ~ hpam_api_key_response.json.Value ~ '; runas=' ~ hpam_run_as_user ~ ';'
+         ~ (' pwd=[' ~ hpam_run_as_password ~ '];' if hpam_run_as_password | length > 0 else '') }}
+  no_log: true
+
+# Everything between sign-in and sign-out runs in a block so the "always"
+# section guarantees the sign-out, mirroring the shell script's EXIT trap.
+- name: "Authenticated HPAM session"
+  block:
+    # ===== Authentication Request =====
+    - name: "Authenticate to HPAM"
+      ansible.builtin.uri:
+        url: "{{ hpam_signin_url }}"
+        method: POST
+        headers:
+          Authorization: "{{ hpam_auth_header }}"
+        validate_certs: false
+        status_code: [200, 201]
+      register: hpam_signin
+      no_log: true
+
+    - name: "Validate authentication"
+      ansible.builtin.assert:
+        that:
+          - hpam_signin.json is defined
+          - hpam_signin.json.UserId is defined
+          - hpam_signin.json.UserId | string | length > 0
+        fail_msg: "[-] Authentication failed"
+        success_msg: "Authentication successful. UserId: {{ hpam_signin.json.UserId | default('?') }}"
+
+    # ===== Resolve destination folder =====
+    # The Folders endpoint has no path filter; it returns a flat list and
+    # the Name field is the full backslash-delimited path (matches
+    # hpam_secrets_safe_folder_path verbatim, e.g. 'example.local\\SecAD...').
+    - name: "List folders"
+      ansible.builtin.uri:
+        url: "{{ hpam_get_folders_url }}"
+        method: GET
+        headers:
+          Authorization: "{{ hpam_auth_header }}"
+          Cookie: "{{ hpam_signin.cookies_string }}"
+        validate_certs: false
+        return_content: true
+      register: hpam_folder_search
+      no_log: true
+
+    - name: "Extract FolderId matching the target folder name"
+      ansible.builtin.set_fact:
+        hpam_folder_id: >-
+          {{ ((hpam_folder_search.json | default([]))
+             | selectattr('Name', 'equalto', hpam_secrets_safe_folder_path)
+             | list | first | default({})).Id | default('') }}
+
+    - name: "Validate destination folder was found"
+      ansible.builtin.assert:
+        that:
+          - hpam_folder_id | string | length > 0
+        fail_msg: >-
+          [-] Destination folder '{{ hpam_secrets_safe_folder_path }}' not found.
+          Folders visible to this account:
+          {{ (hpam_folder_search.json | default([]) | map(attribute='Name') | list) }}
+        success_msg: "Destination folder found. FolderId: {{ hpam_folder_id }}"
+
+    # ===== Create the new credential secret =====
+    # OwnerType/Owners are required by the API (default API version 3.0);
+    # the signed-in user is used as the secret owner.
+    - name: "Create new credential secret"
+      ansible.builtin.uri:
+        url: "{{ hpam_base_url }}/Secrets-Safe/Folders/{{ hpam_folder_id }}/secrets"
+        method: POST
+        headers:
+          Authorization: "{{ hpam_auth_header }}"
+          Cookie: "{{ hpam_signin.cookies_string }}"
+        body_format: json
+        body:
+          Title: "{{ hpam_write_new_secret_title }}"
+          Username: "{{ hpam_write_new_username }}"
+          Password: "{{ hpam_write_new_password }}"
+          OwnerType: "User"
+          Owners:
+            - OwnerId: "{{ hpam_signin.json.UserId }}"
+        validate_certs: false
+        status_code: [200, 201]
+        return_content: true
+      register: hpam_secret_create
+      no_log: true
+
+    - name: "Validate secret was created"
+      ansible.builtin.assert:
+        that:
+          - hpam_secret_create.json is defined
+          - hpam_secret_create.json.Id is defined
+        fail_msg: "[-] Failed to create new secret"
+        success_msg: "New secret created. SecretId: {{ hpam_secret_create.json.Id | default('?') }}"
+
+    # ===== OUTPUT =====
+    # WARNING: this prints the new credential to stdout, like hpam-read.yml.
+    # Remove or redirect this task if the run output is captured/logged.
+    - name: "Display newly created credential"
+      ansible.builtin.debug:
+        msg:
+          - "{{ hpam_write_new_username }}"
+          - "{{ hpam_write_new_password }}"
+
+  always:
+    # ===== Disconnect from HPAM =====
+    # Runs even when a task in the block fails, mirroring the shell
+    # script's EXIT trap. Only attempted once a session cookie exists.
+    - name: "Sign out of HPAM"
+      ansible.builtin.uri:
+        url: "{{ hpam_signout_url }}"
+        method: POST
+        headers:
+          Authorization: "{{ hpam_auth_header }}"
+          Cookie: "{{ hpam_signin.cookies_string }}"
+        validate_certs: false
+        status_code: [200, 204]
+      when:
+        - hpam_signin.cookies_string is defined
+        - hpam_signin.cookies_string | length > 0
+      failed_when: false
+      no_log: true
