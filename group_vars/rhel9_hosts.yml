@@ -49,7 +49,7 @@ grub_superuser: grubadmin
 # grub_password: changeme             # Use ansible-vault in production
 
 # --- Local admin account ----------------------------------------------------
-local_admin_user: localadmin
+local_admin_user: "admin_{{ inventory_hostname }}"
 # local_admin_password: changeme      # Use ansible-vault in production
 # local_admin_ssh_key: "ssh-rsa AAAA..."
 
