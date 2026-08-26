@@ -4,9 +4,14 @@
 # Connection settings and the new entry's defaults are centralized in
 # group_vars/all.yml (hpam_* variables); override with -e.
 #
+# tasks/hpam-write.yml is written as a callable "function": it accepts
+# hpam_write_new_secret_title / hpam_write_new_username / hpam_write_folder_path
+# / hpam_write_environment_code as inputs and returns the new credential in
+# the hpam_write_result fact, so it can also be included from other task files.
+#
 # Usage:
 #   ansible-playbook hpam-write.yml -e hpam_write_new_secret_title='NEW SERVER ADMIN' -e hpam_write_new_username='svc_newadmin'
-#   ansible-playbook hpam-write.yml -e hpam_environment_code=Q -e hpam_write_new_secret_title='OTHER ADMIN' -e hpam_write_new_username='svc_other'
+#   ansible-playbook hpam-write.yml -e hpam_write_environment_code=Q -e hpam_write_new_secret_title='OTHER ADMIN' -e hpam_write_new_username='svc_other'
 
 - name: Create new credential entry in BeyondTrust Password Safe (HPAM)
   hosts: localhost
@@ -19,3 +24,11 @@
   tasks:
     - name: Include HPAM write tasks
       ansible.builtin.include_tasks: tasks/hpam-write.yml
+
+    # WARNING: this prints the new credential to stdout, like hpam-read.yml.
+    # Remove or redirect this task if the run output is captured/logged.
+    - name: "Display newly created credential"
+      ansible.builtin.debug:
+        msg:
+          - "{{ hpam_write_result.username }}"
+          - "{{ hpam_write_result.password }}"

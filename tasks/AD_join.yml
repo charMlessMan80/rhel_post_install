@@ -6,6 +6,7 @@
     dns4: "{{ ad_dns_servers }}"
     dns4_search: "{{ ad_domain }}"
     state: present
+  when: ad_dns_servers is defined and ad_dns_servers | length > 0
   notify: restart_networkmanager
 
 - name: Install required packages for AD join

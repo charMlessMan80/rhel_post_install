@@ -3,9 +3,14 @@
 # Connection settings and the target secret are centralized in
 # group_vars/all.yml (hpam_* variables); override with -e.
 #
+# tasks/hpam-read.yml is written as a callable "function": it accepts
+# hpam_read_secret_title / hpam_read_folder_path / hpam_read_environment_code
+# as inputs and returns the credential in the hpam_read_result fact, so it
+# can also be included from other task files to look up a credential.
+#
 # Usage:
 #   ansible-playbook hpam-read.yml
-#   ansible-playbook hpam-read.yml -e hpam_environment_code=Q -e "hpam_secret_title=OTHER ADMIN"
+#   ansible-playbook hpam-read.yml -e hpam_read_environment_code=Q -e "hpam_read_secret_title=OTHER ADMIN"
 
 - name: Retrieve credential from BeyondTrust Password Safe (HPAM)
   hosts: localhost
@@ -18,3 +23,11 @@
   tasks:
     - name: Include HPAM read tasks
       ansible.builtin.include_tasks: tasks/hpam-read.yml
+
+    # WARNING: this prints the credential to stdout, like the shell script.
+    # Remove or redirect this task if the run output is captured/logged.
+    - name: "Display retrieved credential"
+      ansible.builtin.debug:
+        msg:
+          - "{{ hpam_read_result.username }}"
+          - "{{ hpam_read_result.password }}"

@@ -3,9 +3,14 @@
 # Connection settings and the target secret are centralized in
 # group_vars/all.yml (hpam_* variables); override with -e.
 #
+# tasks/hpam-update.yml is written as a callable "function": it accepts
+# hpam_update_secret_title / hpam_update_folder_path / hpam_update_environment_code
+# / hpam_update_new_password as inputs and returns the outcome in the
+# hpam_update_result fact, so it can also be included from other task files.
+#
 # Usage:
 #   ansible-playbook hpam-update.yml -e hpam_update_new_password='NewSecretValue'
-#   ansible-playbook hpam-update.yml -e hpam_environment_code=Q -e "hpam_secret_title=OTHER ADMIN" -e hpam_update_new_password='NewSecretValue'
+#   ansible-playbook hpam-update.yml -e hpam_update_environment_code=Q -e "hpam_update_secret_title=OTHER ADMIN" -e hpam_update_new_password='NewSecretValue'
 
 - name: Update credential in BeyondTrust Password Safe (HPAM)
   hosts: localhost
@@ -18,3 +23,7 @@
   tasks:
     - name: Include HPAM update tasks
       ansible.builtin.include_tasks: tasks/hpam-update.yml
+
+    - name: "Display update result"
+      ansible.builtin.debug:
+        msg: "Password updated for secret '{{ hpam_update_result.secret_title }}' (SecretId: {{ hpam_update_result.secret_id }})."

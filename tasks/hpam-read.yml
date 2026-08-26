@@ -1,9 +1,20 @@
 ---
 # Ansible port of hpam.sh
 # Retrieves a credential from BeyondTrust Password Safe (HPAM).
-# Included from hpam-read.yml (repo root). Connection settings and the
-# target secret title are centralized in group_vars/all.yml (hpam_*
-# variables) and can be overridden with -e.
+#
+# Callable as a "function": include this file with ansible.builtin.include_tasks
+# and optionally pass call-specific vars (all fall back to the centralized
+# group_vars/all.yml hpam_* defaults when omitted):
+#   hpam_read_secret_title, hpam_read_folder_path, hpam_read_environment_code
+# It returns its result in the hpam_read_result fact:
+#   hpam_read_result.username, hpam_read_result.password, hpam_read_result.secret_id
+#
+# Example:
+#   - ansible.builtin.include_tasks: tasks/hpam-read.yml
+#     vars:
+#       hpam_read_secret_title: "OTHER ADMIN"
+#   - ansible.builtin.debug:
+#       var: hpam_read_result.password
 #
 # Shell -> Ansible translations:
 #   - curl --negotiate -u : (Kerberos)  -> uri module with use_gssapi: true
@@ -16,10 +27,17 @@
 #   - python3-gssapi (for use_gssapi / Kerberos negotiate auth)
 #   - a valid Kerberos ticket (kinit) for the running user
 
+# ===== Resolve call parameters (fall back to centralized group vars) =====
+- name: "Set HPAM read call parameters"
+  ansible.builtin.set_fact:
+    hpam_read_environment_code: "{{ hpam_read_environment_code | default(hpam_environment_code) }}"
+    hpam_read_secret_title: "{{ hpam_read_secret_title | default(hpam_secret_title) }}"
+    hpam_read_folder_path: "{{ hpam_read_folder_path | default(hpam_secrets_safe_folder_path) }}"
+
 # ===== Derived connection facts =====
 - name: "Resolve HPAM base URL for the target environment"
   ansible.builtin.set_fact:
-    hpam_base_url: "{{ hpam_base_url_qa if hpam_environment_code == 'Q' else hpam_base_url_prod }}"
+    hpam_base_url: "{{ hpam_base_url_qa if hpam_read_environment_code == 'Q' else hpam_base_url_prod }}"
 
 - name: "Compute HPAM derived connection facts"
   ansible.builtin.set_fact:
@@ -85,7 +103,7 @@
     # ===== Retrieve Secret ID =====
     - name: "Search for secret by title and path"
       ansible.builtin.uri:
-        url: "{{ hpam_get_secrets_url }}?Title={{ hpam_secret_title | urlencode }}&Path={{ hpam_secrets_safe_folder_path | urlencode }}"
+        url: "{{ hpam_get_secrets_url }}?Title={{ hpam_read_secret_title | urlencode }}&Path={{ hpam_read_folder_path | urlencode }}"
         method: GET
         headers:
           Authorization: "{{ hpam_auth_header }}"
@@ -135,14 +153,15 @@
         fail_msg: "[-] Failed to retrieve password"
         success_msg: "Secret details retrieved."
 
-    # ===== OUTPUT =====
-    # WARNING: this prints the credential to stdout, like the shell script.
-    # Remove or redirect this task if the run output is captured/logged.
-    - name: "Display retrieved credential"
-      ansible.builtin.debug:
-        msg:
-          - "{{ hpam_secret_details.json.Username }}"
-          - "{{ hpam_secret_details.json.Password }}"
+    # ===== RETURN VALUE =====
+    # "Return" the result to the caller as a fact, like a function's return value.
+    - name: "Return retrieved credential"
+      ansible.builtin.set_fact:
+        hpam_read_result:
+          username: "{{ hpam_secret_details.json.Username }}"
+          password: "{{ hpam_secret_details.json.Password }}"
+          secret_id: "{{ hpam_secret_id }}"
+      no_log: true
 
   always:
     # ===== Disconnect from HPAM =====

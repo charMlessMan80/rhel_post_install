@@ -2,9 +2,22 @@
 # Ansible port of hpam.sh / hpam-read.yml
 # Creates a brand new credential entry (new user + randomly generated
 # password) in BeyondTrust Password Safe (HPAM), instead of reading one.
-# Included from hpam-write.yml (repo root). Connection settings and the new
-# entry's defaults are centralized in group_vars/all.yml (hpam_* variables)
-# and can be overridden with -e.
+#
+# Callable as a "function": include this file with ansible.builtin.include_tasks
+# and optionally pass call-specific vars (all fall back to the centralized
+# group_vars/all.yml hpam_* defaults when omitted):
+#   hpam_write_new_secret_title, hpam_write_new_username, hpam_write_new_password_length,
+#   hpam_write_folder_path, hpam_write_environment_code
+# It returns its result in the hpam_write_result fact:
+#   hpam_write_result.username, hpam_write_result.password, hpam_write_result.secret_id
+#
+# Example:
+#   - ansible.builtin.include_tasks: tasks/hpam-write.yml
+#     vars:
+#       hpam_write_new_secret_title: "OTHER ADMIN"
+#       hpam_write_new_username: "svc_other"
+#   - ansible.builtin.debug:
+#       var: hpam_write_result.password
 #
 # Shell -> Ansible translations:
 #   - curl --negotiate -u : (Kerberos)  -> uri module with use_gssapi: true
@@ -25,6 +38,12 @@
     fail_msg: "[-] hpam_write_new_secret_title and hpam_write_new_username must be supplied, e.g. -e hpam_write_new_secret_title='...' -e hpam_write_new_username='...'"
     success_msg: "New secret title and username supplied."
 
+# ===== Resolve call parameters (fall back to centralized group vars) =====
+- name: "Set HPAM write call parameters"
+  ansible.builtin.set_fact:
+    hpam_write_environment_code: "{{ hpam_write_environment_code | default(hpam_environment_code) }}"
+    hpam_write_folder_path: "{{ hpam_write_folder_path | default(hpam_secrets_safe_folder_path) }}"
+
 # ===== Generate a random password for the new entry =====
 # /dev/null as the lookup "file" means a fresh password is generated on
 # every run instead of being cached/reused from a saved file.
@@ -36,7 +55,7 @@
 # ===== Derived connection facts =====
 - name: "Resolve HPAM base URL for the target environment"
   ansible.builtin.set_fact:
-    hpam_base_url: "{{ hpam_base_url_qa if hpam_environment_code == 'Q' else hpam_base_url_prod }}"
+    hpam_base_url: "{{ hpam_base_url_qa if hpam_write_environment_code == 'Q' else hpam_base_url_prod }}"
 
 - name: "Compute HPAM derived connection facts"
   ansible.builtin.set_fact:
@@ -102,7 +121,7 @@
     # ===== Resolve destination folder =====
     # The Folders endpoint has no path filter; it returns a flat list and
     # the Name field is the full backslash-delimited path (matches
-    # hpam_secrets_safe_folder_path verbatim, e.g. 'example.local\\SecAD...').
+    # hpam_write_folder_path verbatim, e.g. 'example.local\\SecAD...').
     - name: "List folders"
       ansible.builtin.uri:
         url: "{{ hpam_get_folders_url }}"
@@ -119,7 +138,7 @@
       ansible.builtin.set_fact:
         hpam_folder_id: >-
           {{ ((hpam_folder_search.json | default([]))
-             | selectattr('Name', 'equalto', hpam_secrets_safe_folder_path)
+             | selectattr('Name', 'equalto', hpam_write_folder_path)
              | list | first | default({})).Id | default('') }}
 
     - name: "Validate destination folder was found"
@@ -127,7 +146,7 @@
         that:
           - hpam_folder_id | string | length > 0
         fail_msg: >-
-          [-] Destination folder '{{ hpam_secrets_safe_folder_path }}' not found.
+          [-] Destination folder '{{ hpam_write_folder_path }}' not found.
           Folders visible to this account:
           {{ (hpam_folder_search.json | default([]) | map(attribute='Name') | list) }}
         success_msg: "Destination folder found. FolderId: {{ hpam_folder_id }}"
@@ -164,14 +183,15 @@
         fail_msg: "[-] Failed to create new secret"
         success_msg: "New secret created. SecretId: {{ hpam_secret_create.json.Id | default('?') }}"
 
-    # ===== OUTPUT =====
-    # WARNING: this prints the new credential to stdout, like hpam-read.yml.
-    # Remove or redirect this task if the run output is captured/logged.
-    - name: "Display newly created credential"
-      ansible.builtin.debug:
-        msg:
-          - "{{ hpam_write_new_username }}"
-          - "{{ hpam_write_new_password }}"
+    # ===== RETURN VALUE =====
+    # "Return" the result to the caller as a fact, like a function's return value.
+    - name: "Return newly created credential"
+      ansible.builtin.set_fact:
+        hpam_write_result:
+          username: "{{ hpam_write_new_username }}"
+          password: "{{ hpam_write_new_password }}"
+          secret_id: "{{ hpam_secret_create.json.Id }}"
+      no_log: true
 
   always:
     # ===== Disconnect from HPAM =====

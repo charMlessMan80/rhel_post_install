@@ -1,9 +1,20 @@
 ---
 # Ansible port of hpam.sh / hpam-read.yml
 # Updates (writes) a credential's password in BeyondTrust Password Safe (HPAM).
-# Included from hpam-update.yml (repo root). Connection settings and the
-# target secret title are centralized in group_vars/all.yml (hpam_*
-# variables) and can be overridden with -e.
+#
+# Callable as a "function": include this file with ansible.builtin.include_tasks
+# and optionally pass call-specific vars (all fall back to the centralized
+# group_vars/all.yml hpam_* defaults when omitted):
+#   hpam_update_secret_title, hpam_update_folder_path, hpam_update_environment_code
+# hpam_update_new_password is required and has no default.
+# It returns its result in the hpam_update_result fact:
+#   hpam_update_result.secret_id, hpam_update_result.status
+#
+# Example:
+#   - ansible.builtin.include_tasks: tasks/hpam-update.yml
+#     vars:
+#       hpam_update_secret_title: "OTHER ADMIN"
+#       hpam_update_new_password: "{{ new_password }}"
 #
 # Shell -> Ansible translations:
 #   - curl --negotiate -u : (Kerberos)  -> uri module with use_gssapi: true
@@ -24,10 +35,17 @@
     success_msg: "New password supplied."
   no_log: true
 
+# ===== Resolve call parameters (fall back to centralized group vars) =====
+- name: "Set HPAM update call parameters"
+  ansible.builtin.set_fact:
+    hpam_update_environment_code: "{{ hpam_update_environment_code | default(hpam_environment_code) }}"
+    hpam_update_secret_title: "{{ hpam_update_secret_title | default(hpam_secret_title) }}"
+    hpam_update_folder_path: "{{ hpam_update_folder_path | default(hpam_secrets_safe_folder_path) }}"
+
 # ===== Derived connection facts =====
 - name: "Resolve HPAM base URL for the target environment"
   ansible.builtin.set_fact:
-    hpam_base_url: "{{ hpam_base_url_qa if hpam_environment_code == 'Q' else hpam_base_url_prod }}"
+    hpam_base_url: "{{ hpam_base_url_qa if hpam_update_environment_code == 'Q' else hpam_base_url_prod }}"
 
 - name: "Compute HPAM derived connection facts"
   ansible.builtin.set_fact:
@@ -93,7 +111,7 @@
     # ===== Retrieve Secret ID =====
     - name: "Search for secret by title and path"
       ansible.builtin.uri:
-        url: "{{ hpam_get_secrets_url }}?Title={{ hpam_secret_title | urlencode }}&Path={{ hpam_secrets_safe_folder_path | urlencode }}"
+        url: "{{ hpam_get_secrets_url }}?Title={{ hpam_update_secret_title | urlencode }}&Path={{ hpam_update_folder_path | urlencode }}"
         method: GET
         headers:
           Authorization: "{{ hpam_auth_header }}"
@@ -159,10 +177,14 @@
         fail_msg: "[-] Failed to update password"
         success_msg: "Secret password updated."
 
-    # ===== OUTPUT =====
-    - name: "Display update result"
-      ansible.builtin.debug:
-        msg: "Password updated for secret '{{ hpam_secret_title }}' (SecretId: {{ hpam_secret_id }})."
+    # ===== RETURN VALUE =====
+    # "Return" the result to the caller as a fact, like a function's return value.
+    - name: "Return update result"
+      ansible.builtin.set_fact:
+        hpam_update_result:
+          secret_title: "{{ hpam_update_secret_title }}"
+          secret_id: "{{ hpam_secret_id }}"
+          status: "{{ hpam_secret_update.status }}"
 
   always:
     # ===== Disconnect from HPAM =====
