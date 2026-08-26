@@ -4,6 +4,7 @@
 - name: Check whether an HPAM entry already exists for the local admin account
   ansible.builtin.include_tasks: tasks/hpam-read.yml
   delegate_to: localhost
+  become: false
   ignore_errors: true
   vars:
     hpam_read_secret_title: "{{ local_admin_user }}"
@@ -11,6 +12,7 @@
 - name: Create HPAM entry for the local admin account
   ansible.builtin.include_tasks: tasks/hpam-write.yml
   delegate_to: localhost
+  become: false
   when: hpam_read_result is not defined
   vars:
     hpam_write_new_secret_title: "{{ local_admin_user }}"
@@ -19,6 +21,7 @@
 - name: Retrieve local admin password from HPAM
   ansible.builtin.include_tasks: tasks/hpam-read.yml
   delegate_to: localhost
+  become: false
   vars:
     hpam_read_secret_title: "{{ local_admin_user }}"
 

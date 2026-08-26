@@ -4,6 +4,7 @@
 - name: Retrieve AD join credential from HPAM
   ansible.builtin.include_tasks: tasks/hpam-read.yml
   delegate_to: localhost
+  become: false
   vars:
     hpam_read_secret_title: "{{ ad_join_user_title }}"
 

@@ -2,6 +2,7 @@
 - name: Post-installation tasks for RHEL 9
   hosts: rhel9_hosts
   become: true
+  become_user: ansible_admin
   gather_facts: true
 
   tasks:
