@@ -45,7 +45,7 @@ rpm_min_signatures: 2
 # rpm_pq_gpg_keys: []                 # Additional PQ GPG key URLs or paths
 
 # --- GRUB security ----------------------------------------------------------
-grub_superuser: grubadmin
+grub_superuser: "grubadmin_{{ inventory_hostname }}"
 # grub_password: changeme             # Use ansible-vault in production
 
 # --- Local admin account ----------------------------------------------------
