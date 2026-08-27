@@ -19,7 +19,7 @@
 # Shell -> Ansible translations:
 #   - curl --negotiate -u : (Kerberos)  -> uri module with use_gssapi: true
 #   - curl cookie jar (-c / -b)         -> capture/replay signin.cookies_string
-#   - id -un                            -> ansible_user_id fact
+#   - id -un                            -> hpam_operator (control-node lookup)
 #   - jq field extraction               -> registered .json results
 #   - trap cleanup EXIT (sign-out)      -> block / always
 #
@@ -41,8 +41,8 @@
 
 - name: "Compute HPAM derived connection facts"
   ansible.builtin.set_fact:
-    hpam_run_as_user: "{{ ansible_user_id }}@{{ hpam_run_as_domain }}"
-    hpam_api_key_url: "{{ hpam_api_key_service_url }}/API_{{ ansible_user_id }}"
+    hpam_run_as_user: "{{ hpam_operator }}@{{ hpam_run_as_domain }}"
+    hpam_api_key_url: "{{ hpam_api_key_service_url }}/API_{{ hpam_operator }}"
     hpam_signin_url: "{{ hpam_base_url }}/Auth/SignAppin"
     hpam_get_secrets_url: "{{ hpam_base_url }}/Secrets-Safe/Secrets"
     hpam_signout_url: "{{ hpam_base_url }}/Auth/Signout"

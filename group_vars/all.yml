@@ -15,6 +15,11 @@ hpam_base_url_prod: "https://hpam-prod.example.com:8443/BeyondTrust/api/public/v
 hpam_api_key_service_url: "https://frameworkservices.example.com/vault/secrets"
 hpam_api_key_source: "MSA"
 hpam_run_as_domain: "EXAMPLE.LOCAL"
+# Operator identity, resolved on the CONTROL NODE.
+# A Jinja lookup is always evaluated locally, unlike ansible_user_id which
+# is a fact of the target host. This mirrors `id -un` from the original
+# shell script and must match the Kerberos principal used by use_gssapi.
+hpam_operator: "{{ lookup('ansible.builtin.pipe', 'id -un') }}"
 # hpam_run_as_password: "changeme"             # Use ansible-vault in production
 hpam_run_as_password: ""
 hpam_secrets_safe_folder_path: 'example.local\folder_path'
