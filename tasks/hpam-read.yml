@@ -27,6 +27,11 @@
 #   - python3-gssapi (for use_gssapi / Kerberos negotiate auth)
 #   - a valid Kerberos ticket (kinit) for the running user
 
+- name: "Compute HPAM derived connection facts"
+  ansible.builtin.set_fact:
+    hpam_run_as_user: "{{ hpam_operator }}@{{ hpam_run_as_domain }}"
+    hpam_api_key_url: "{{ hpam_api_key_service_url }}/API_{{ hpam_operator }}"
+
 # ===== Resolve call parameters (fall back to centralized group vars) =====
 - name: "Set HPAM read call parameters"
   ansible.builtin.set_fact:
