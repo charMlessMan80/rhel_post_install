@@ -9,8 +9,11 @@
   ansible.builtin.command: id -Z
   register: preflight_selinux_context
   changed_when: false
+  failed_when: false
   tags: [preflight]
 
+# id -Z errors out and returns no context when SELinux is disabled; skip the
+# check then, otherwise it would wrongly accuse the staff_u mapping.
 - name: "Preflight: fail unless the escalated process runs unconfined_t"
   ansible.builtin.assert:
     that:
@@ -25,6 +28,13 @@
       as a one-off on this target with:
         semanage login -a -s unconfined_u ansible_admin
     success_msg: "Effective SELinux context OK: {{ preflight_selinux_context.stdout }}"
+  when: ansible_selinux.status | default('disabled') == 'enabled'
+  tags: [preflight]
+
+- name: "Preflight: report that the unconfined_t check was skipped"
+  ansible.builtin.debug:
+    msg: "SELinux is disabled on this host — the unconfined_t check was skipped."
+  when: ansible_selinux.status | default('disabled') != 'enabled'
   tags: [preflight]
 
 # --- 2b. List-type variables must not be explicitly null --------------------
@@ -52,7 +62,6 @@
   loop_control:
     label: "{{ item }}"
   when: item in vars
-  no_log: true
   tags: [preflight]
 
 # --- 2c. Scalar variables must not be explicitly null ------------------------
@@ -82,15 +91,17 @@
   loop_control:
     label: "{{ item }}"
   when: item in vars
-  no_log: true
   tags: [preflight]
 
 # --- 2d. python3-gssapi must be importable on the CONTROL NODE ---------------
 # The HPAM tasks run delegate_to: localhost with use_gssapi: true.
+# If localhost is declared in the inventory with its own
+# ansible_python_interpreter, that is what the uri module will use, not the
+# interpreter running ansible-playbook; default() covers the implicit localhost.
 - name: "Preflight: check python3-gssapi is importable on the control node"
   ansible.builtin.command:
     argv:
-      - "{{ ansible_playbook_python }}"
+      - "{{ hostvars['localhost'].ansible_python_interpreter | default(ansible_playbook_python) }}"
       - -c
       - import gssapi
   delegate_to: localhost
@@ -101,20 +112,24 @@
   register: preflight_gssapi
   tags: [preflight]
 
-- name: "Preflight: fail if python3-gssapi is missing on the control node"
-  ansible.builtin.assert:
-    that:
-      - preflight_gssapi.rc == 0
-    fail_msg: >-
-      python3-gssapi is not importable on the control node with
-      "{{ ansible_playbook_python }}" (rc={{ preflight_gssapi.rc }}). The
-      HPAM tasks (hpam-read.yml, hpam-write.yml, hpam-update.yml) run
-      delegate_to: localhost with use_gssapi: true and require it. Install
-      it on the CONTROL NODE, e.g.: dnf install python3-gssapi
-    success_msg: "python3-gssapi import OK on the control node"
+# Not fatal: 2d/2e run on every invocation (always tag), including runs that
+# never touch HPAM. The HPAM tasks themselves will fail with their own
+# message if this warning is ignored.
+- name: "Preflight: warn if python3-gssapi is missing on the control node"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: python3-gssapi is not importable on the control node with
+      "{{ hostvars['localhost'].ansible_python_interpreter | default(ansible_playbook_python) }}"
+      (rc={{ preflight_gssapi.rc }}). The HPAM tasks (hpam-read.yml,
+      hpam-write.yml, hpam-update.yml) run delegate_to: localhost with
+      use_gssapi: true and require it. Install it on the CONTROL NODE,
+      e.g.: dnf install python3-gssapi
+      These HPAM tasks will fail if this run reaches them; the rest of the
+      playbook can proceed.
   delegate_to: localhost
   become: false
   run_once: true
+  when: preflight_gssapi.rc != 0
   tags: [preflight]
 
 # --- 2e. A Kerberos ticket must be present on the CONTROL NODE ---------------
@@ -128,17 +143,18 @@
   register: preflight_klist
   tags: [preflight]
 
-- name: "Preflight: fail if no Kerberos ticket is present on the control node"
-  ansible.builtin.assert:
-    that:
-      - preflight_klist.rc == 0
-    fail_msg: >-
-      No valid Kerberos ticket found on the control node (klist -s
+# Not fatal: see the gssapi warning above for the rationale.
+- name: "Preflight: warn if no Kerberos ticket is present on the control node"
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: No valid Kerberos ticket found on the control node (klist -s
       returned {{ preflight_klist.rc }}). The HPAM tasks use
       use_gssapi: true and need a ticket for the operator identified by
       hpam_operator. Run: kinit
-    success_msg: "Kerberos ticket present on the control node"
+      These HPAM tasks will fail if this run reaches them; the rest of the
+      playbook can proceed.
   delegate_to: localhost
   become: false
   run_once: true
+  when: preflight_klist.rc != 0
   tags: [preflight]
