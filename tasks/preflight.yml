@@ -1,0 +1,144 @@
+---
+# Fails fast, with actionable messages, on known blockers that would
+# otherwise surface tens of tasks later as opaque errors.
+
+# --- 2a. Effective SELinux context after privilege escalation ---------------
+# ansible_selinux (from gather_facts) exposes status/type/mode/policyvers of
+# the HOST policy, not the context of the current process, hence id -Z here.
+- name: "Preflight: capture the effective SELinux context after escalation"
+  ansible.builtin.command: id -Z
+  register: preflight_selinux_context
+  changed_when: false
+  tags: [preflight]
+
+- name: "Preflight: fail unless the escalated process runs unconfined_t"
+  ansible.builtin.assert:
+    that:
+      - "'unconfined_t' in preflight_selinux_context.stdout"
+    fail_msg: >-
+      Effective SELinux context after privilege escalation is
+      "{{ preflight_selinux_context.stdout }}", expected a type containing
+      "unconfined_t". ansible_admin is likely mapped to the staff_u SELinux
+      login on this TARGET's image, which keeps root in staff_t and denies
+      dac_override (surfaces later as an opaque Errno 13). This is an IMAGE
+      defect and cannot be fixed by this playbook: fix it on the image, or
+      as a one-off on this target with:
+        semanage login -a -s unconfined_u ansible_admin
+    success_msg: "Effective SELinux context OK: {{ preflight_selinux_context.stdout }}"
+  tags: [preflight]
+
+# --- 2b. List-type variables must not be explicitly null --------------------
+# An empty YAML key (e.g. "dns_servers:") is `is defined` but None, and
+# breaks `| length` with "object of type NoneType has no len()".
+- name: "Preflight: reject list-type variables explicitly set to null"
+  ansible.builtin.assert:
+    that:
+      - vars[item] is not none
+    fail_msg: >-
+      "{{ item }}" is defined but has no value (an empty "{{ item }}:" key,
+      most likely in a group_vars file). This satisfies "is defined" but
+      breaks "| length" with "object of type NoneType has no len()". Either
+      give "{{ item }}" a real list value or delete the key entirely from
+      the group_vars file that sets it.
+    success_msg: "{{ item }} is either absent or has a value: OK"
+  loop:
+    - dns_servers
+    - ad_dns_servers
+    - dns_search_domains
+    - ntp_servers
+    - ssh_allowed_ips
+    - ad_allowed_groups
+    - rpm_pq_gpg_keys
+  loop_control:
+    label: "{{ item }}"
+  when: item in vars
+  no_log: true
+  tags: [preflight]
+
+# --- 2c. Scalar variables must not be explicitly null ------------------------
+# Same NoneType trap as 2b, but for scalars. An empty string ("") is a valid
+# value here (e.g. adcs_server: "" disables the AD CS module) -- only null
+# (an empty "key:") is rejected, so this must stay a `is not none` check,
+# never a `| length` / truthiness check.
+- name: "Preflight: reject scalar variables explicitly set to null"
+  ansible.builtin.assert:
+    that:
+      - vars[item] is not none
+    fail_msg: >-
+      "{{ item }}" is defined but set to null (an empty "{{ item }}:" key,
+      most likely in a group_vars file). An empty string is a valid value
+      here (e.g. adcs_server: "" disables the AD CS module), but null is
+      not. Either give "{{ item }}" a value (an empty string where
+      applicable) or delete the key entirely from the group_vars file that
+      sets it.
+    success_msg: "{{ item }} is either absent or has a value: OK"
+  loop:
+    - ad_domain
+    - ad_ou
+    - adcs_server
+    - local_admin_user
+    - grub_superuser
+    - hpam_operator
+  loop_control:
+    label: "{{ item }}"
+  when: item in vars
+  no_log: true
+  tags: [preflight]
+
+# --- 2d. python3-gssapi must be importable on the CONTROL NODE ---------------
+# The HPAM tasks run delegate_to: localhost with use_gssapi: true.
+- name: "Preflight: check python3-gssapi is importable on the control node"
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - -c
+      - import gssapi
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  failed_when: false
+  register: preflight_gssapi
+  tags: [preflight]
+
+- name: "Preflight: fail if python3-gssapi is missing on the control node"
+  ansible.builtin.assert:
+    that:
+      - preflight_gssapi.rc == 0
+    fail_msg: >-
+      python3-gssapi is not importable on the control node with
+      "{{ ansible_playbook_python }}" (rc={{ preflight_gssapi.rc }}). The
+      HPAM tasks (hpam-read.yml, hpam-write.yml, hpam-update.yml) run
+      delegate_to: localhost with use_gssapi: true and require it. Install
+      it on the CONTROL NODE, e.g.: dnf install python3-gssapi
+    success_msg: "python3-gssapi import OK on the control node"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  tags: [preflight]
+
+# --- 2e. A Kerberos ticket must be present on the CONTROL NODE ---------------
+- name: "Preflight: check for a Kerberos ticket on the control node"
+  ansible.builtin.command: klist -s
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  failed_when: false
+  register: preflight_klist
+  tags: [preflight]
+
+- name: "Preflight: fail if no Kerberos ticket is present on the control node"
+  ansible.builtin.assert:
+    that:
+      - preflight_klist.rc == 0
+    fail_msg: >-
+      No valid Kerberos ticket found on the control node (klist -s
+      returned {{ preflight_klist.rc }}). The HPAM tasks use
+      use_gssapi: true and need a ticket for the operator identified by
+      hpam_operator. Run: kinit
+    success_msg: "Kerberos ticket present on the control node"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  tags: [preflight]

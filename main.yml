@@ -5,6 +5,10 @@
   gather_facts: true
 
   tasks:
+    - name: Preflight checks
+      ansible.builtin.include_tasks: tasks/preflight.yml
+      tags: [preflight, always]
+
     - name: Include hostname configuration tasks
       ansible.builtin.include_tasks: tasks/set_hostname.yml
 
