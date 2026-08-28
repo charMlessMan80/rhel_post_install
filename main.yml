@@ -38,21 +38,23 @@
       ansible.builtin.include_tasks: tasks/PKI_enrolment.yml
       when: adcs_server is defined and adcs_server | length > 0
 
+    # The password is retrieved from HPAM by the included task itself, so it is
+    # not supplied in advance. Gating this inclusion on local_admin_password
+    # would therefore always evaluate to false.
     - name: Include local admin account tasks
       ansible.builtin.include_tasks: tasks/local_admin.yml
-      when: local_admin_password is defined
 
     - name: Include SSH hardening tasks
       ansible.builtin.include_tasks: tasks/ssh_hardening.yml
-      when: local_admin_password is defined
 
     - name: Include secure root shell access tasks
       ansible.builtin.include_tasks: tasks/secure_root.yml
-      when: local_admin_password is defined
 
+    # The password is retrieved from HPAM by the included task itself, so it is
+    # not supplied in advance. Gating this inclusion on grub_password would
+    # therefore always evaluate to false.
     - name: Include GRUB password protection tasks
       ansible.builtin.include_tasks: tasks/secure_grub.yml
-      when: grub_password is defined
 
     - name: Include auditd configuration tasks
       ansible.builtin.include_tasks: tasks/audit_config.yml
