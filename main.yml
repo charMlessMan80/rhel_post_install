@@ -22,9 +22,9 @@
       ansible.builtin.include_tasks: tasks/RHSM_config.yml
       when: rhsm_username is defined and rhsm_password is defined
 
-    - name: Include kernel hot patching tasks
-      ansible.builtin.include_tasks: tasks/kernel_hotpatch.yml
-      when: ansible_facts['distribution'] == "RedHat" and ansible_facts['distribution_major_version'] == "9"
+#    - name: Include kernel hot patching tasks
+#      ansible.builtin.include_tasks: tasks/kernel_hotpatch.yml
+#      when: ansible_facts['distribution'] == "RedHat" and ansible_facts['distribution_major_version'] == "9"
 
     - name: Include packages update tasks
       ansible.builtin.include_tasks: tasks/packages_update.yml
