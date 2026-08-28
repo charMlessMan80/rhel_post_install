@@ -5,7 +5,7 @@
     state: present
 
 - name: Set timezone
-  ansible.builtin.timezone:
+  community.general.timezone:
     name: "{{ ntp_timezone | default('UTC') }}"
 
 - name: Remove default pool/server entries

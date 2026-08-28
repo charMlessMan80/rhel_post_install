@@ -57,7 +57,7 @@
     validate: "visudo -cf %s"
 
 - name: Add SSH authorized key for local admin
-  ansible.builtin.authorized_key:
+  ansible.posix.authorized_key:
     user: "{{ local_admin_user | default('localadmin') }}"
     key: "{{ local_admin_ssh_key }}"
     state: present

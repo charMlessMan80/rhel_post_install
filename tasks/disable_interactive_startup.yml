@@ -53,7 +53,7 @@
     - rescue.service
 
 - name: Disable SysRq key
-  ansible.builtin.sysctl:
+  ansible.posix.sysctl:
     name: kernel.sysrq
     value: "0"
     state: present
