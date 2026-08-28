@@ -1,1 +1,4 @@
-group_vars/*/99-site.yml
+group_vars/*/*-site.yml
+
+# Fichiers de travail locaux
+test.yml
