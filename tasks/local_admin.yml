@@ -1,13 +1,14 @@
 ---
 # Provision the local admin credential in HPAM (control node operation, hence
 # delegate_to: localhost) instead of relying on a pre-supplied local_admin_password.
+# ignore_errors is valid on a dynamic include but is not passed to included tasks; only apply propagates it.
 - name: Check whether an HPAM entry already exists for the local admin account
   ansible.builtin.include_tasks:
     file: tasks/hpam-read.yml
     apply:
       delegate_to: localhost
       become: false
-  ignore_errors: true
+      ignore_errors: true
   vars:
     hpam_read_secret_title: "{{ local_admin_user }}"
 

@@ -7,7 +7,7 @@
     apply:
       delegate_to: localhost
       become: false
-  ignore_errors: true
+      ignore_errors: true
   vars:
     hpam_read_secret_title: "{{ grub_superuser }}"
 
