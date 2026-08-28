@@ -18,7 +18,7 @@
     apply:
       delegate_to: localhost
       become: false
-  when: hpam_read_result is not defined
+  when: hpam_read_result is none
   vars:
     hpam_write_new_secret_title: "{{ local_admin_user }}"
     hpam_write_new_username: "{{ local_admin_user }}"

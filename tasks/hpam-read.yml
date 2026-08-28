@@ -6,7 +6,8 @@
 # and optionally pass call-specific vars (all fall back to the centralized
 # group_vars/all.yml hpam_* defaults when omitted):
 #   hpam_read_secret_title, hpam_read_folder_path, hpam_read_environment_code
-# It returns its result in the hpam_read_result fact:
+# It returns its result in the hpam_read_result fact, which is null when the
+# credential lookup fails:
 #   hpam_read_result.username, hpam_read_result.password, hpam_read_result.secret_id
 #
 # Example:
@@ -26,6 +27,10 @@
 # Requirements on the node that runs this play:
 #   - python3-gssapi (for use_gssapi / Kerberos negotiate auth)
 #   - a valid Kerberos ticket (kinit) for the running user
+
+- name: "Reset any previous HPAM read result"
+  ansible.builtin.set_fact:
+    hpam_read_result: null
 
 - name: "Compute HPAM derived connection facts"
   ansible.builtin.set_fact:

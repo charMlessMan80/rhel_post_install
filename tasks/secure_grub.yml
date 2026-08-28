@@ -17,7 +17,7 @@
     apply:
       delegate_to: localhost
       become: false
-  when: hpam_read_result is not defined
+  when: hpam_read_result is none
   vars:
     hpam_write_new_secret_title: "{{ grub_superuser }}"
     hpam_write_new_username: "{{ grub_superuser }}"
