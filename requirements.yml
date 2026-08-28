@@ -1,4 +1,12 @@
 ---
+# Collections required by this playbook. Install with:
+#   ansible-galaxy collection install -r requirements.yml
+#
+# Versions are pinned because recent releases dropped support for the
+# ansible-core shipped with RHEL 9 (2.14), which emits:
+#   [WARNING]: Collection ansible.posix does not support Ansible version 2.14.18
 collections:
   - name: ansible.posix
+    version: "<2.0.0"
   - name: community.general
+    version: "<9.0.0"
