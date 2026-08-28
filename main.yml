@@ -12,9 +12,11 @@
     - name: Include hostname configuration tasks
       ansible.builtin.include_tasks: tasks/set_hostname.yml
 
+    # The second default argument treats None as missing, which is not handled
+    # by is defined alone.
     - name: Include DNS configuration tasks
       ansible.builtin.include_tasks: tasks/DNS_config.yml
-      when: dns_servers is defined and dns_servers | length > 0
+      when: dns_servers | default([], true) | length > 0
 
     - name: Include Red Hat Subscription Manager tasks
       ansible.builtin.include_tasks: tasks/RHSM_config.yml
@@ -29,14 +31,14 @@
 
     - name: Include NTP configuration tasks
       ansible.builtin.include_tasks: tasks/NTP_config.yml
-      when: ntp_servers is defined and ntp_servers | length > 0
+      when: ntp_servers | default([], true) | length > 0
 
     - name: Include AD domain join tasks
       ansible.builtin.include_tasks: tasks/AD_join.yml
 
     - name: Include AD CS certificate enrollment tasks
       ansible.builtin.include_tasks: tasks/PKI_enrolment.yml
-      when: adcs_server is defined and adcs_server | length > 0
+      when: adcs_server | default('', true) | length > 0
 
     # The password is retrieved from HPAM by the included task itself, so it is
     # not supplied in advance. Gating this inclusion on local_admin_password
@@ -64,7 +66,7 @@
 
     - name: Include firewall configuration tasks
       ansible.builtin.include_tasks: tasks/firewall_config.yml
-      when: ssh_allowed_ips is defined and ssh_allowed_ips | length > 0
+      when: ssh_allowed_ips | default([], true) | length > 0
 
   handlers:
     - name: restart_networkmanager
