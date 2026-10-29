@@ -5,8 +5,14 @@
   gather_facts: true
 
   tasks:
+    # Tags on a dynamic include only apply to the include itself: apply:
+    # propagates them to the included tasks, so the checks also run with
+    # --tags <other> (skip them explicitly with --skip-tags preflight).
     - name: Preflight checks
-      ansible.builtin.include_tasks: tasks/preflight.yml
+      ansible.builtin.include_tasks:
+        file: tasks/preflight.yml
+        apply:
+          tags: [preflight, always]
       tags: [preflight, always]
 
     - name: Include hostname configuration tasks
