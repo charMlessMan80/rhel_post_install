@@ -1,14 +1,56 @@
 ---
+# satellite-installer rejects upper-case hostnames and expects `hostname -f`
+# to return the FQDN, so the hostname is always the lower-case FQDN.
+- name: Fail if the FQDN cannot be built from the inventory name
+  ansible.builtin.assert:
+    that:
+      - "'.' in inventory_hostname or ad_domain | default('', true) | length > 0"
+      - ansible_default_ipv4.address is defined
+    fail_msg: >-
+      Cannot build the FQDN of "{{ inventory_hostname }}": either use the FQDN
+      as inventory name or set ad_domain, and make sure the host has a default
+      IPv4 route (ansible_default_ipv4.address is used in /etc/hosts).
+    quiet: true
+
+- name: Compute the canonical FQDN
+  ansible.builtin.set_fact:
+    host_fqdn: "{{ (inventory_hostname if '.' in inventory_hostname else inventory_hostname ~ '.' ~ ad_domain) | lower }}"
+
+- name: Compute the short hostname
+  ansible.builtin.set_fact:
+    host_short: "{{ host_fqdn.split('.')[0] }}"
+
 - name: Set hostname
   ansible.builtin.hostname:
-    name: "{{ inventory_hostname }}"
+    name: "{{ host_fqdn }}"
 
-- name: Ensure hostname is in /etc/hosts
+# Earlier versions of this task replaced the localhost line with
+# "127.0.0.1 FQDN short", which made the FQDN resolve to loopback.
+# Case-insensitive, as those versions wrote the upper-case inventory name.
+- name: Remove loopback entries that point to this host's names
   ansible.builtin.lineinfile:
     path: /etc/hosts
-    regexp: '^\s*127\.0\.0\.1'
-    line: "127.0.0.1  {{ inventory_hostname }}.{{ ad_domain }} {{ inventory_hostname }}"
-    state: present
+    regexp: '(?i)^\s*127\.0\.[01]\.1\s.*(?<![\w.-])({{ host_fqdn | regex_escape }}|{{ host_short | regex_escape }})(?![\w.-])'
+    state: absent
+
+- name: Ensure the IPv4 localhost entry is present
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^\s*127\.0\.0\.1\s+localhost(\s|$)'
+    line: "127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4"
+    insertbefore: BOF
+
+- name: Ensure the host's IP maps to its FQDN in /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^\s*{{ ansible_default_ipv4.address | regex_escape }}\s'
+    line: "{{ ansible_default_ipv4.address }}  {{ host_fqdn }} {{ host_short }}"
+
+# Facts were gathered before the rename: refresh ansible_fqdn/ansible_hostname
+# for any later consumer.
+- name: Refresh facts after the hostname change
+  ansible.builtin.setup:
+    gather_subset: [min]
 
 - name: Verify hostname
   ansible.builtin.command: hostnamectl status

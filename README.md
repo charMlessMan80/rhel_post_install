@@ -9,13 +9,14 @@ Each module can be enabled or skipped through inventory / group variables.
 
 | Module | File | Purpose |
 | --- | --- | --- |
-| Hostname | `tasks/set_hostname.yml` | Set FQDN and update `/etc/hosts`. |
+| Hostname | `tasks/set_hostname.yml` | Set the lower-case FQDN as hostname and update `/etc/hosts`. |
 | DNS | `tasks/DNS_config.yml` | Configure DNS servers / search domains via NetworkManager. |
 | Subscription Manager | `tasks/RHSM_config.yml` | Register with RHSM, enable repos, optional proxy. |
 | Kernel hot patching | `tasks/kernel_hotpatch.yml` | Install and load `kpatch` live patches. |
 | Package updates | `tasks/packages_update.yml` | Full `dnf update`, reboot if the kernel changed. |
 | NTP | `tasks/NTP_config.yml` | Configure chrony time sources and timezone. |
 | Active Directory join | `tasks/AD_join.yml` | Join AD via `realmd`/SSSD, restrict logins to allowed groups. |
+| Identity checks | `tasks/verify_identity.yml` | Fail unless hostname, `/etc/hosts`, DNS A/PTR and the AD join are consistent. |
 | PKI enrollment | `tasks/PKI_enrolment.yml` | Enroll a machine certificate from AD CS via certmonger + **cepces (CES/CEP)**. |
 | Local admin | `tasks/local_admin.yml` | Create a local sudo admin with optional SSH key. |
 | SSH hardening | `tasks/ssh_hardening.yml` | Disable root SSH login. |
@@ -23,7 +24,7 @@ Each module can be enabled or skipped through inventory / group variables.
 | GRUB password | `tasks/secure_grub.yml` | Protect the bootloader with a PBKDF2 password. |
 | Audit logging | `tasks/audit_config.yml` | Configure `auditd` for full "who did what" logging (commands, identity, privilege, file changes). |
 | Disable interactive startup | `tasks/disable_interactive_startup.yml` | Remove single-user/rescue/SysRq/Ctrl+Alt+Del escapes. |
-| Firewall | `tasks/firewall_config.yml` | Restrict SSH to trusted source networks via firewalld. |
+| Firewall | `tasks/firewall_config.yml` | Stop and disable firewalld (default), or restrict SSH to trusted source networks. |
 
 ## Repository layout
 
@@ -75,11 +76,66 @@ templates/                   # Jinja2 templates (sssd, auditd rules)
 | `adcs_server`, `adcs_cert_template`, `adcs_root_ca_cert` | AD CS enrollment (module skipped if `adcs_server` is empty). |
 | `local_admin_user`, `local_admin_password`, `local_admin_ssh_key` | Local admin account. |
 | `grub_superuser`, `grub_password` | GRUB protection (module skipped if `grub_password` unset). |
-| `ssh_allowed_ips`, `firewall_zone` | Firewall SSH allow-list. |
+| `firewalld_enabled` | Default `false`: firewalld is stopped and disabled, filtering is left to the network firewall. `true`: firewalld restricts SSH to `ssh_allowed_ips` (mandatory then, checked by preflight). |
+| `ssh_allowed_ips`, `firewall_zone` | Firewall SSH allow-list, used only when `firewalld_enabled: true`; preflight fails if it is set while `firewalld_enabled` is not `true`. |
+| `verify_ptr_strict` | Default `true`: fail when the PTR record of the host IP does not match its FQDN. `false`: warn only. |
+| `verify_dns_timeout` | Default `180`: maximum time in seconds to wait for each of the DNS A and PTR records (checked every 10 s). |
 | `audit_buffer_size`, `audit_failure_mode`, `audit_rate_limit`, `audit_immutable` | auditd tuning (buffer, failure action, rate limit, lock rules with `-e 2`). |
 
 > Modules guarded by `when:` conditions are skipped automatically when their
 > required variables are undefined or empty.
+
+## Hostname and `/etc/hosts`
+
+`tasks/set_hostname.yml` computes the canonical FQDN, exposed as the
+`host_fqdn` fact (and `host_short` for the short name):
+
+- `inventory_hostname` if it already contains a dot, otherwise
+  `inventory_hostname.ad_domain`, always converted to **lower case**
+  (`satellite-installer` rejects upper-case hostnames);
+- the hostname is set to that FQDN, so `hostname -f` returns it.
+
+`/etc/hosts` is managed as follows:
+
+- any `127.0.0.1` / `127.0.1.1` line carrying the FQDN or the short name is
+  removed (earlier versions replaced the localhost line with one, making the
+  FQDN resolve to loopback);
+- `127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4`
+  is restored if missing;
+- a dedicated `<default IPv4>  <fqdn> <short>` line is maintained.
+
+Facts are refreshed after the rename, and the PKI module uses `host_fqdn` for
+the certificate CN/SAN, key/certificate paths and Kerberos principal.
+
+## Identity checks
+
+`tasks/verify_identity.yml` runs right after the AD join, once handlers are
+flushed (SSSD restarted, dynamic DNS update sent). It fails with an explicit
+message unless:
+
+- `hostname -f` equals `host_fqdn`;
+- `getent hosts <fqdn>` returns the host IP, never a `127.*` address;
+- `getent ahostsv4 localhost` returns `127.0.0.1`;
+- the DNS A record of the FQDN points to the host IP;
+- the DNS PTR record of the host IP is the FQDN (required by Satellite);
+  failure or warning depending on `verify_ptr_strict`;
+- `realm list` shows `ad_domain`.
+
+DNS records are created by SSSD (`dyndns`, GSS-TSIG) and each DNS check retries
+for up to `verify_dns_timeout` seconds (default 180, to cover AD replication
+between domain controllers). They use `getent -s dns`, which queries DNS only (bypassing
+`/etc/hosts` and SSSD), so no extra package such as `bind-utils` is required.
+The PTR update needs the reverse zone to exist on the AD DNS servers.
+
+## Satellite / AAP servers
+
+- Do **not** define `ssh_allowed_ips` and keep `firewalld_enabled: false`:
+  the SSH-only firewalld policy would block the Satellite and AAP ports.
+- `tasks/secure_root.yml` sets root's shell to `/sbin/nologin`: run
+  administrative commands with `sudo <command>`; `sudo -i` and `sudo su -`
+  no longer give a root shell.
+- The AAP installation user must remain a **local** account (rootless podman
+  relies on local `/etc/subuid` / `/etc/subgid` entries), never an AD account.
 
 ## PKI enrollment (AD CS via CES/CEP)
 

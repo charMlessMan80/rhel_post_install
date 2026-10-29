@@ -1,37 +1,61 @@
 ---
-- name: Install firewalld
-  ansible.builtin.dnf:
-    name: firewalld
-    state: present
+# firewalld_enabled only drives the local firewalld service: when false,
+# filtering is left to the network firewall. The "enabled without
+# ssh_allowed_ips" case is rejected by preflight.yml before any change.
 
-- name: Start and enable firewalld
+# --- firewalld disabled (default) --------------------------------------------
+# service_facts first: stopping a unit that does not exist (firewalld not
+# installed) would fail.
+- name: Gather service facts
+  ansible.builtin.service_facts:
+  when: not firewalld_enabled | default(false) | bool
+
+- name: Stop and disable firewalld
   ansible.builtin.service:
     name: firewalld
-    state: started
-    enabled: true
+    state: stopped
+    enabled: false
+  when:
+    - not firewalld_enabled | default(false) | bool
+    - "'firewalld.service' in ansible_facts.services"
 
-- name: Remove default SSH service from zone
-  ansible.posix.firewalld:
-    service: ssh
-    zone: "{{ firewall_zone | default('public') }}"
-    permanent: true
-    immediate: true
-    state: disabled
+# --- firewalld enabled: restrict SSH to ssh_allowed_ips ----------------------
+- name: Restrict SSH with firewalld
+  when: firewalld_enabled | default(false) | bool
+  block:
+    - name: Install firewalld
+      ansible.builtin.dnf:
+        name: firewalld
+        state: present
 
-- name: Allow SSH from trusted IPs only
-  ansible.posix.firewalld:
-    rich_rule: 'rule family="ipv4" source address="{{ item }}" port port="22" protocol="tcp" accept'
-    zone: "{{ firewall_zone | default('public') }}"
-    permanent: true
-    immediate: true
-    state: enabled
-  loop: "{{ ssh_allowed_ips | default([]) }}"
+    - name: Start and enable firewalld
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
 
-- name: Verify active firewall rules
-  ansible.builtin.command: "firewall-cmd --zone={{ firewall_zone | default('public') }} --list-all"
-  register: firewall_status
-  changed_when: false
+    - name: Remove default SSH service from zone
+      ansible.posix.firewalld:
+        service: ssh
+        zone: "{{ firewall_zone | default('public') }}"
+        permanent: true
+        immediate: true
+        state: disabled
 
-- name: Display firewall status
-  ansible.builtin.debug:
-    var: firewall_status.stdout_lines
+    - name: Allow SSH from trusted IPs only
+      ansible.posix.firewalld:
+        rich_rule: 'rule family="ipv4" source address="{{ item }}" port port="22" protocol="tcp" accept'
+        zone: "{{ firewall_zone | default('public') }}"
+        permanent: true
+        immediate: true
+        state: enabled
+      loop: "{{ ssh_allowed_ips | default([]) }}"
+
+    - name: Verify active firewall rules
+      ansible.builtin.command: "firewall-cmd --zone={{ firewall_zone | default('public') }} --list-all"
+      register: firewall_status
+      changed_when: false
+
+    - name: Display firewall status
+      ansible.builtin.debug:
+        var: firewall_status.stdout_lines

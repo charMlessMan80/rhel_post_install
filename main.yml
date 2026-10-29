@@ -36,6 +36,14 @@
     - name: Include AD domain join tasks
       ansible.builtin.include_tasks: tasks/AD_join.yml
 
+    # sssd must have been restarted (dyndns update sent) before the DNS checks.
+    # Only restart_networkmanager and restart_sssd can be pending at this point.
+    - name: Flush handlers before the identity checks
+      ansible.builtin.meta: flush_handlers
+
+    - name: Include post-configuration identity checks
+      ansible.builtin.include_tasks: tasks/verify_identity.yml
+
     - name: Include AD CS certificate enrollment tasks
       ansible.builtin.include_tasks: tasks/PKI_enrolment.yml
       when: adcs_server | default('', true) | length > 0
@@ -66,7 +74,6 @@
 
     - name: Include firewall configuration tasks
       ansible.builtin.include_tasks: tasks/firewall_config.yml
-      when: ssh_allowed_ips | default([], true) | length > 0
 
   handlers:
     - name: restart_networkmanager

@@ -4,8 +4,8 @@
     adcs_ca_name: "cepces"
     adcs_host: "{{ adcs_server }}"
     adcs_template: "{{ adcs_cert_template | default('Machine') }}"
-    cert_key_path: "/etc/pki/tls/private/{{ ansible_fqdn }}.key"
-    cert_path: "/etc/pki/tls/certs/{{ ansible_fqdn }}.crt"
+    cert_key_path: "/etc/pki/tls/private/{{ host_fqdn }}.key"
+    cert_path: "/etc/pki/tls/certs/{{ host_fqdn }}.crt"
     cert_key_size: 2048
     krb_realm: "{{ ad_domain | upper }}"
 
@@ -100,9 +100,9 @@
     -k {{ cert_key_path }}
     -f {{ cert_path }}
     -g {{ cert_key_size }}
-    -N "CN={{ ansible_fqdn }}"
-    -D {{ ansible_fqdn }}
-    -K host/{{ ansible_fqdn }}@{{ krb_realm }}
+    -N "CN={{ host_fqdn }}"
+    -D {{ host_fqdn }}
+    -K host/{{ host_fqdn }}@{{ krb_realm }}
     -T {{ adcs_template }}
     -C "systemctl reload httpd || true"
   when: getcert_status.rc != 0

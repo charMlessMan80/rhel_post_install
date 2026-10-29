@@ -53,6 +53,11 @@ ansible_python_interpreter: /usr/bin/python3
 # local_admin_ssh_key: "ssh-rsa AAAA..."
 
 # --- Firewall ---------------------------------------------------------------
+# firewalld_enabled drives only the local firewalld service (default: false,
+# firewalld stopped and disabled, filtering left to the network firewall).
+# When true, ssh_allowed_ips is mandatory. Leave ssh_allowed_ips unset on
+# Satellite/AAP servers.
+# firewalld_enabled: false
 #ssh_allowed_ips:
 #  - 10.0.0.0/24
 #  - 192.168.1.0/24
@@ -62,3 +67,11 @@ ansible_python_interpreter: /usr/bin/python3
 #adcs_server: ""                       # leave empty to skip module (e.g. "ca.example.com")
 #adcs_cert_template: Machine
 # adcs_root_ca_cert: files/adcs-root-ca.crt
+
+# --- Post-configuration identity checks -------------------------------------
+# Fail (true) or only warn (false) when the reverse DNS (PTR) record of the
+# host IP does not match its FQDN after the retry loop.
+# verify_ptr_strict: true
+# Maximum time (seconds) to wait for the DNS A and PTR records registered by
+# sssd dyndns, each (AD replication between domain controllers).
+# verify_dns_timeout: 180

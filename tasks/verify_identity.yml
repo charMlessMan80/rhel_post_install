@@ -1,0 +1,151 @@
+---
+# Post-configuration identity checks, run after AD_join.yml once handlers are
+# flushed (sssd restarted, dyndns update sent). Satellite requires the FQDN
+# to resolve forward and reverse to the real IP, never to loopback.
+#
+# DNS lookups use `getent -s dns`, which queries the DNS servers through
+# nss_dns only, bypassing /etc/hosts and sssd, so no bind-utils is needed.
+
+# Both DNS checks wait up to verify_dns_timeout seconds: the dyndns update
+# goes to one domain controller and the lookup may hit another one before
+# AD replication.
+- name: Set identity check facts
+  ansible.builtin.set_fact:
+    verify_host_ip: "{{ ansible_default_ipv4.address }}"
+    verify_dns_delay: 10
+    verify_dns_retries: "{{ ((verify_dns_timeout | default(180) | int) / 10) | round(0, 'ceil') | int }}"
+
+# --- Local resolution ---------------------------------------------------------
+- name: Get the FQDN returned by hostname -f
+  ansible.builtin.command: hostname -f
+  register: verify_hostname_f
+  changed_when: false
+
+- name: Fail unless hostname -f returns the expected FQDN
+  ansible.builtin.assert:
+    that:
+      - verify_hostname_f.stdout == host_fqdn
+    fail_msg: >-
+      hostname -f returned "{{ verify_hostname_f.stdout }}", expected
+      "{{ host_fqdn }}". Check the hostname and the /etc/hosts entry written
+      by set_hostname.yml.
+    success_msg: "hostname -f = {{ host_fqdn }}: OK"
+
+- name: Resolve the FQDN through NSS (/etc/hosts first)
+  ansible.builtin.command: "getent hosts {{ host_fqdn }}"
+  register: verify_getent_fqdn
+  changed_when: false
+  failed_when: false
+
+- name: Fail unless the FQDN resolves to the host IP, not loopback
+  ansible.builtin.assert:
+    that:
+      - verify_getent_fqdn.rc == 0
+      - verify_getent_fqdn.stdout.split()[0] == verify_host_ip
+      - not verify_getent_fqdn.stdout.split()[0].startswith('127.')
+    fail_msg: >-
+      getent hosts {{ host_fqdn }} returned "{{ verify_getent_fqdn.stdout }}"
+      (rc={{ verify_getent_fqdn.rc }}), expected {{ verify_host_ip }}. A
+      127.* address means a loopback line in /etc/hosts still carries the
+      FQDN; another address means a stale /etc/hosts entry.
+    success_msg: "getent hosts {{ host_fqdn }} = {{ verify_host_ip }}: OK"
+
+- name: Resolve localhost in IPv4
+  ansible.builtin.command: getent ahostsv4 localhost
+  register: verify_getent_localhost
+  changed_when: false
+  failed_when: false
+
+- name: Fail unless localhost resolves to 127.0.0.1
+  ansible.builtin.assert:
+    that:
+      - verify_getent_localhost.rc == 0
+      - "'127.0.0.1' in verify_getent_localhost.stdout_lines | map('split') | map('first') | list"
+    fail_msg: >-
+      getent ahostsv4 localhost returned "{{ verify_getent_localhost.stdout }}"
+      (rc={{ verify_getent_localhost.rc }}), expected 127.0.0.1. The
+      "127.0.0.1 localhost ..." line is missing from /etc/hosts.
+    success_msg: "localhost = 127.0.0.1: OK"
+
+# --- DNS (forward A and reverse PTR, registered by sssd dyndns) ---------------
+- name: Resolve the FQDN in DNS (A record)
+  ansible.builtin.command: "getent -s dns ahostsv4 {{ host_fqdn }}"
+  register: verify_dns_a
+  changed_when: false
+  failed_when: false
+  until: >-
+    verify_dns_a.rc == 0 and
+    verify_host_ip in verify_dns_a.stdout_lines | map('split') | map('first') | list
+  retries: "{{ verify_dns_retries | int }}"
+  delay: "{{ verify_dns_delay }}"
+
+- name: Fail unless the DNS A record points to the host IP
+  ansible.builtin.assert:
+    that:
+      - verify_dns_a.rc == 0
+      - verify_host_ip in verify_dns_a.stdout_lines | map('split') | map('first') | list
+      - verify_dns_a.stdout_lines | map('split') | map('first') | select('match', '^127\.') | list | length == 0
+    fail_msg: >-
+      DNS lookup of {{ host_fqdn }} returned "{{ verify_dns_a.stdout }}"
+      (rc={{ verify_dns_a.rc }}) after {{ verify_dns_timeout | default(180) }}s, expected {{ verify_host_ip }}.
+      Check that sssd dyndns updated the zone (journalctl -u sssd, and
+      dyndns_* in /etc/sssd/sssd.conf) and that the DNS servers in
+      /etc/resolv.conf are the AD DNS servers.
+    success_msg: "DNS A {{ host_fqdn }} = {{ verify_host_ip }}: OK"
+
+- name: Resolve the host IP in DNS (PTR record)
+  ansible.builtin.command: "getent -s dns hosts {{ verify_host_ip }}"
+  register: verify_dns_ptr
+  changed_when: false
+  failed_when: false
+  until: >-
+    verify_dns_ptr.rc == 0 and
+    (verify_dns_ptr.stdout.split()[1] | default('') | lower | regex_replace('\.$', '')) == host_fqdn
+  retries: "{{ verify_dns_retries | int }}"
+  delay: "{{ verify_dns_delay }}"
+
+- name: Evaluate the PTR record
+  ansible.builtin.set_fact:
+    verify_ptr_ok: >-
+      {{ verify_dns_ptr.rc == 0 and
+         (verify_dns_ptr.stdout.split()[1] | default('') | lower | regex_replace('\.$', '')) == host_fqdn }}
+    verify_ptr_msg: >-
+      Reverse DNS lookup of {{ verify_host_ip }} returned
+      "{{ verify_dns_ptr.stdout }}" (rc={{ verify_dns_ptr.rc }}) after {{ verify_dns_timeout | default(180) }}s,
+      expected {{ host_fqdn }}. Satellite requires a matching PTR record.
+      sssd dyndns can only update it if the reverse zone exists on the AD
+      DNS and accepts secure updates from this computer account.
+
+- name: Fail if the PTR record does not match (verify_ptr_strict)
+  ansible.builtin.fail:
+    msg: "{{ verify_ptr_msg }}"
+  when:
+    - not verify_ptr_ok | bool
+    - verify_ptr_strict | default(true) | bool
+
+- name: Warn if the PTR record does not match (verify_ptr_strict disabled)
+  ansible.builtin.debug:
+    msg: "WARNING: {{ verify_ptr_msg }}"
+  when:
+    - not verify_ptr_ok | bool
+    - not verify_ptr_strict | default(true) | bool
+
+- name: Report a matching PTR record
+  ansible.builtin.debug:
+    msg: "DNS PTR {{ verify_host_ip }} = {{ host_fqdn }}: OK"
+  when: verify_ptr_ok | bool
+
+# --- AD membership ------------------------------------------------------------
+- name: List joined realms
+  ansible.builtin.command: realm list
+  register: verify_realm_list
+  changed_when: false
+
+- name: Fail unless the host is joined to the AD domain
+  ansible.builtin.assert:
+    that:
+      - (ad_domain | lower) in (verify_realm_list.stdout | lower)
+    fail_msg: >-
+      realm list does not show {{ ad_domain }}:
+      "{{ verify_realm_list.stdout }}"
+    success_msg: "Joined to {{ ad_domain }}: OK"

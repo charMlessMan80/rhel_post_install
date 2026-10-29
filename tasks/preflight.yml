@@ -88,9 +88,55 @@
     - local_admin_user
     - grub_superuser
     - hpam_operator
+    - firewalld_enabled
+    - verify_ptr_strict
+    - verify_dns_timeout
   loop_control:
     label: "{{ item }}"
   when: item in vars
+  tags: [preflight]
+
+# --- 2c-bis. An active firewalld needs an SSH allow-list ---------------------
+# firewall_config.yml removes the ssh service from the zone: with no
+# ssh_allowed_ips, firewalld would end up active with no rule letting SSH in.
+- name: "Preflight: fail if firewalld is enabled without ssh_allowed_ips"
+  ansible.builtin.assert:
+    that:
+      - ssh_allowed_ips | default([], true) | length > 0
+    fail_msg: >-
+      firewalld_enabled is true but ssh_allowed_ips is empty or undefined:
+      firewalld would be started with no rule allowing SSH. Either define
+      ssh_allowed_ips or set firewalld_enabled: false (the default, filtering
+      is then left to the network firewall).
+    success_msg: "firewalld_enabled with {{ ssh_allowed_ips | default([], true) | length }} SSH source(s): OK"
+  when: firewalld_enabled | default(false) | bool
+  tags: [preflight]
+
+# firewalld_enabled defaults to false, which stops firewalld: a host that
+# relied on ssh_allowed_ips alone would silently lose its SSH restriction.
+- name: "Preflight: fail if ssh_allowed_ips is set but firewalld_enabled is not true"
+  ansible.builtin.assert:
+    that:
+      - firewalld_enabled | default(false) | bool
+    fail_msg: >-
+      ssh_allowed_ips is set ({{ ssh_allowed_ips | join(', ') }}) but
+      firewalld_enabled is not true: firewalld would be stopped and the SSH
+      restriction dropped. Set firewalld_enabled: true to keep the SSH
+      restriction, or remove ssh_allowed_ips.
+    quiet: true
+  when: ssh_allowed_ips | default([], true) | length > 0
+  tags: [preflight]
+
+- name: "Preflight: fail unless verify_dns_timeout is a positive number of seconds"
+  ansible.builtin.assert:
+    that:
+      - verify_dns_timeout | string is match('^[0-9]+$')
+      - verify_dns_timeout | int > 0
+    fail_msg: >-
+      verify_dns_timeout is "{{ verify_dns_timeout }}", expected a positive
+      integer (seconds to wait for the DNS A/PTR records, default 180).
+    quiet: true
+  when: verify_dns_timeout is defined and verify_dns_timeout is not none
   tags: [preflight]
 
 # --- 2d. python3-gssapi must be importable on the CONTROL NODE ---------------
